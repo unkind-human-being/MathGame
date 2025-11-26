@@ -3,76 +3,77 @@
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 
-export default function Home() {
+export default function TeacherPage() {
   const router = useRouter();
 
   return (
     <main
       style={{
         minHeight: "100vh",
-        background: "linear-gradient(180deg, #0a0f24, #111827)",
+        background: "linear-gradient(180deg,#0a0f24,#111827)",
         display: "flex",
         flexDirection: "column",
         justifyContent: "center",
         alignItems: "center",
-        padding: "20px",
-        textAlign: "center",
+        padding: "25px",
       }}
     >
       {/* TITLE */}
       <motion.h1
-        initial={{ scale: 0.6, opacity: 0 }}
+        initial={{ scale: 0.5, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        transition={{ duration: 0.6 }}
+        transition={{ duration: 0.5 }}
         style={{
-          fontSize: "52px",
-          fontWeight: "900",
           color: "white",
-          textShadow: "0 0 25px #00eaff, 0 0 45px #00eaff",
-          letterSpacing: "3px",
+          fontSize: "42px",
+          fontWeight: "900",
           marginBottom: "40px",
+          textShadow: "0 0 25px #14b8ff",
         }}
       >
-        ASMATH
+        TEACHER MODE
       </motion.h1>
 
-      {/* BUTTONS */}
       <div
         style={{
           width: "100%",
           maxWidth: "330px",
           display: "flex",
           flexDirection: "column",
-          gap: "18px",
+          gap: "20px",
         }}
       >
-        <MenuButton label="STUDENT" color="#00ffa3" onClick={() => router.push("/student")} />
-        <MenuButton label="TEACHER" color="#14b8ff" onClick={() => router.push("/teacher")} />
+        {/* CREATE BUTTON */}
         <MenuButton
-          label="AUTHENTICATION"
-          color="#ff6ad5"
-          onClick={() => router.push("/auth/login")}
+          label="CREATE ROOM"
+          color="#00ffa3"
+          onClick={() => router.push("/teacher/create")}
+        />
+
+        {/* JOIN BUTTON */}
+        <MenuButton
+          label="JOIN ROOM"
+          color="#14b8ff"
+          onClick={() => router.push("/teacher/join")}
         />
       </div>
     </main>
   );
 }
 
-/* ------------------------------------------------------------
-   BEAUTIFUL BUTTON COMPONENT (INSIDE SAME FILE)
--------------------------------------------------------------*/
+/* Beautiful Button */
 function MenuButton({
   label,
-  onClick,
   color,
+  onClick,
 }: {
   label: string;
-  onClick: () => void;
   color: string;
+  onClick: () => void;
 }) {
   return (
     <motion.button
-      whileTap={{ scale: 0.93 }}
+      whileTap={{ scale: 0.95 }}
       whileHover={{ scale: 1.03 }}
       transition={{ type: "spring", stiffness: 200 }}
       onClick={onClick}
@@ -83,10 +84,10 @@ function MenuButton({
         border: "none",
         fontSize: "20px",
         fontWeight: "bold",
-        color: "#0a0f24",
         background: color,
-        boxShadow: `0 0 20px ${color}99, 0 0 40px ${color}55`,
+        color: "#0a0f24",
         cursor: "pointer",
+        boxShadow: `0 0 20px ${color}aa`,
       }}
     >
       {label}
