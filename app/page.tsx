@@ -30,36 +30,40 @@ export default function Home() {
           color: "white",
           textShadow: "0 0 25px #00eaff, 0 0 45px #00eaff",
           letterSpacing: "3px",
-          marginBottom: "40px",
+          marginBottom: "50px",
         }}
       >
         ASMATH
       </motion.h1>
 
-      {/* BUTTONS */}
+      {/* MENU BUTTONS */}
       <div
         style={{
           width: "100%",
           maxWidth: "330px",
           display: "flex",
           flexDirection: "column",
-          gap: "18px",
+          gap: "20px",
         }}
       >
         <MenuButton label="STUDENT" color="#00ffa3" onClick={() => router.push("/student")} />
         <MenuButton label="TEACHER" color="#14b8ff" onClick={() => router.push("/teacher")} />
-        <MenuButton
-          label="AUTHENTICATION"
-          color="#ff6ad5"
-          onClick={() => router.push("/auth/login")}
-        />
+
+        {/* 🔥 Google Login at Bottom */}
+        <div style={{ marginTop: "25px" }}>
+          <MenuButton
+            label="LOGIN WITH GOOGLE"
+            color="#ffffff"
+            onClick={() => router.push("/auth/login")}
+          />
+        </div>
       </div>
     </main>
   );
 }
 
 /* ------------------------------------------------------------
-   BEAUTIFUL BUTTON COMPONENT (INSIDE SAME FILE)
+   BUTTON COMPONENT
 -------------------------------------------------------------*/
 function MenuButton({
   label,

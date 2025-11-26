@@ -1,142 +1,63 @@
 "use client";
 
-import { useState } from "react";
-import { motion } from "framer-motion";
+import { signInWithPopup, GoogleAuthProvider } from "firebase/auth";
 import { auth } from "@/firebase/firebaseConfig";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 export default function LoginPage() {
   const router = useRouter();
-
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function handleLogin() {
-    if (!email || !password) {
-      alert("Enter your email and password.");
-      return;
-    }
-
-    setLoading(true);
-
+  async function loginGoogle() {
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      router.push("/"); // go Home
-    } catch (err: any) {
-      alert(err.message);
+      setLoading(true);
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+      router.push("/"); // redirect after success
+    } catch (err) {
+      console.log("Login failed:", err);
+      setLoading(false);
     }
-
-    setLoading(false);
   }
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background: "linear-gradient(180deg, #0a0f24, #111827)",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        padding: "25px",
-      }}
-    >
-      <motion.h1
-        initial={{ y: -20, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        style={{
-          textAlign: "center",
-          color: "white",
-          marginBottom: "30px",
-          fontSize: "32px",
-          fontWeight: "800",
-          textShadow: "0 0 20px #00eaff",
-        }}
-      >
-        Login
-      </motion.h1>
+    <main style={{
+      minHeight:"100vh", background:"#0a0f24", color:"white",
+      display:"flex", flexDirection:"column", justifyContent:"center", 
+      alignItems:"center", textAlign:"center", padding:"40px"
+    }}>
 
-      <InputField label="Email" value={email} onChange={setEmail} />
-      <InputField
-        label="Password"
-        type="password"
-        value={password}
-        onChange={setPassword}
-      />
+      <motion.h2
+        initial={{opacity:0, y:-10}}
+        animate={{opacity:1,y:0}}
+        transition={{duration:.5}}
+        style={{fontSize:"36px",fontWeight:"bold",marginBottom:20}}
+      >
+        Login with Google
+      </motion.h2>
 
       <motion.button
-        whileTap={{ scale: 0.95 }}
-        onClick={handleLogin}
+        whileTap={{scale:.94}}
+        whileHover={{scale:1.04}}
         disabled={loading}
+        onClick={loginGoogle}
         style={{
-          width: "100%",
-          padding: "15px",
-          marginTop: "20px",
-          borderRadius: "12px",
-          border: "none",
-          background: "#14b8ff",
-          color: "#0a0f24",
-          fontWeight: "bold",
-          fontSize: "18px",
-          boxShadow: "0 0 15px #14b8ffcc",
-          cursor: "pointer",
+          background:"white", color:"#0a0f24", padding:"14px 28px",
+          borderRadius:"10px", fontWeight:"bold", fontSize:"18px",
+          cursor:"pointer", width:"240px"
         }}
       >
-        {loading ? "Logging in..." : "Login"}
+        {loading? "Signing in..." : "Continue with Google"}
       </motion.button>
 
-      <p
-        style={{
-          marginTop: "15px",
-          color: "#9ca3af",
-          fontSize: "14px",
-          textAlign: "center",
-        }}
+      <button 
+        onClick={()=>router.push("/")}
+        style={{marginTop:30,color:"#00ffa3",fontSize:16}}
       >
-        Don’t have an account?{" "}
-        <span
-          onClick={() => router.push("/auth/register")}
-          style={{ color: "#14b8ff", cursor: "pointer" }}
-        >
-          Register
-        </span>
-      </p>
+        ← Back Home
+      </button>
     </main>
-  );
-}
-
-/* INPUT FIELD */
-function InputField({
-  label,
-  type = "text",
-  value,
-  onChange,
-}: {
-  label: string;
-  type?: string;
-  value: string;
-  onChange: (val: string) => void;
-}) {
-  return (
-    <div style={{ marginBottom: "18px" }}>
-      <label style={{ color: "#a5b4fc", fontSize: "14px" }}>{label}</label>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        style={{
-          width: "100%",
-          padding: "14px",
-          marginTop: "6px",
-          borderRadius: "12px",
-          border: "none",
-          outline: "none",
-          background: "#1f2937",
-          color: "white",
-          fontSize: "16px",
-        }}
-      />
-    </div>
   );
 }

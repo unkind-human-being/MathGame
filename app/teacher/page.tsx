@@ -2,23 +2,28 @@
 
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
+import { useEffect, useState, CSSProperties } from "react";
+import { auth } from "@/firebase/firebaseConfig";
+import { onAuthStateChanged } from "firebase/auth";
 
 export default function TeacherPage() {
   const router = useRouter();
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  // 🔍 Check authentication
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u || null);
+      setLoading(false);
+    });
+    return () => unsub();
+  }, []);
+
+  if (loading) return <main style={loadingScreen}>Checking login...</main>;
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background: "linear-gradient(180deg,#0a0f24,#111827)",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        alignItems: "center",
-        padding: "25px",
-      }}
-    >
-      {/* TITLE */}
+    <main style={page}>
       <motion.h1
         initial={{ scale: 0.5, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
@@ -34,34 +39,43 @@ export default function TeacherPage() {
         TEACHER MODE
       </motion.h1>
 
-      <div
-        style={{
-          width: "100%",
-          maxWidth: "330px",
-          display: "flex",
-          flexDirection: "column",
-          gap: "20px",
-        }}
-      >
-        {/* CREATE BUTTON */}
+      <div style={wrap}>
+        {/* CREATE ROOM — only if logged in */}
         <MenuButton
-          label="CREATE ROOM"
-          color="#00ffa3"
-          onClick={() => router.push("/teacher/create")}
+          label={user ? "CREATE ROOM" : "LOGIN FIRST TO CREATE"}
+          color={user ? "#00ffa3" : "#ff6ad5"}
+          onClick={() => {
+            if (!user) return router.push("/auth/login");
+            router.push("/teacher/create");
+          }}
         />
 
-        {/* JOIN BUTTON */}
         <MenuButton
           label="JOIN ROOM"
           color="#14b8ff"
           onClick={() => router.push("/teacher/join")}
         />
+
+        {/* Show Login Button if not signed in */}
+        {!user && (
+          <MenuButton
+            label="LOGIN WITH GOOGLE"
+            color="white"
+            onClick={() => router.push("/auth/login")}
+          />
+        )}
+
+        {user && (
+          <p style={{ color: "#00ffa3", marginTop: 10 }}>
+            Logged in as <b>{user.displayName}</b> ✔
+          </p>
+        )}
       </div>
     </main>
   );
 }
 
-/* Beautiful Button */
+/* =========== COMPONENT =========== */
 function MenuButton({
   label,
   color,
@@ -94,3 +108,32 @@ function MenuButton({
     </motion.button>
   );
 }
+
+/* =========== FIXED TYPES BELOW =========== */
+const page: CSSProperties = {
+  minHeight: "100vh",
+  background: "linear-gradient(180deg,#0a0f24,#111827)",
+  display: "flex",
+  flexDirection: "column",
+  justifyContent: "center",
+  alignItems: "center",
+  padding: "25px",
+};
+
+const wrap: CSSProperties = {
+  width: "100%",
+  maxWidth: "330px",
+  display: "flex",
+  flexDirection: "column",
+  gap: "20px",
+};
+
+const loadingScreen: CSSProperties = {
+  minHeight: "100vh",
+  display: "flex",
+  justifyContent: "center",
+  alignItems: "center",
+  color: "white",
+  background: "#0a0f24",
+  fontSize: 22,
+};
