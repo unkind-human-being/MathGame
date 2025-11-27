@@ -18,7 +18,7 @@ export default function Home() {
         transition={{ duration: 0.6 }}
         style={title}
       >
-        ASMATH
+        AZMATH
       </motion.h1>
 
       <div style={menuBox}>
