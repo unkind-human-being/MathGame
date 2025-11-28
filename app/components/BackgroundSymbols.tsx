@@ -18,31 +18,31 @@ type FloatingItem = {
 };
 
 export default function FloatingMathBackground() {
-  const SYMBOLS = ["+", "-", "×", "÷", "%", "√", "π", "∑", "∞", "/", "≠", "≈", "<", ">", "±", "⊗", "∫"];
+  const SYMBOLS = ["+", "-", "×", "÷", "%", "√", "π", "∞", "/", "∑"];
   const SHAPES = ["circle", "triangle", "square", "hexagon"];
-  const COLORS = ["#00FFA3", "#14B8FF", "#FF6AD5", "#FFE55C", "#7BFFB2", "#C084FC", "#FF8A8A", "#5AF4F9"];
+  const COLORS = ["#00FFA3", "#14B8FF", "#FF6AD5", "#FFE55C", "#7BFFB2", "#C084FC", "#FF8A8A"];
 
-  const TOTAL = 95;
+  const TOTAL = 45; // << Less clutter!
 
   const [items, setItems] = useState<FloatingItem[]>([]);
 
   useEffect(() => {
     const data: FloatingItem[] = Array.from({ length: TOTAL }).map(() => {
-      const isSymbol = Math.random() > 0.45;
+      const isSymbol = Math.random() > 0.5;
 
       return {
         type: isSymbol ? "symbol" : "shape",
         symbol: isSymbol ? SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)] : undefined,
         shape: !isSymbol ? SHAPES[Math.floor(Math.random() * SHAPES.length)] : undefined,
-        size: 20 + Math.random() * 70,
+        size: 10 + Math.random() * 45, // smaller now! 10–55px
         left: Math.random() * 100,
         top: Math.random() * 100,
         color: COLORS[Math.floor(Math.random() * COLORS.length)],
-        duration: 6 + Math.random() * 12,
+        duration: 7 + Math.random() * 10,
         delay: Math.random() * 4,
         rotation: Math.random() * 360,
-        blur: Math.random() * 2,
-      } satisfies FloatingItem; // ⭐ TYPE-SAFE!
+        blur: Math.random() * 1.2,
+      };
     });
 
     setItems(data);
@@ -57,18 +57,19 @@ export default function FloatingMathBackground() {
             left: `${item.left}%`,
             top: `${item.top}%`,
             fontSize: item.size,
-            fontWeight: 900,
+            fontWeight: 800,
             color: item.color,
-            textShadow: `0 0 20px ${item.color}, 0 0 35px ${item.color}`,
+            textShadow: `0 0 10px ${item.color}`,
             position: "absolute",
             filter: `blur(${item.blur}px)`,
+            opacity: 0.7,
           }}
           animate={{
-            x: [0, 25, 0],
-            y: [0, -25, 0],
+            x: [0, 20, 0],
+            y: [0, -20, 0],
             rotate: [item.rotation, item.rotation + 360],
-            opacity: [0.3, 1, 0.4],
-            scale: [0.9, 1.3, 1],
+            opacity: [0.28, 0.9, 0.35],
+            scale: [0.85, 1.15, 0.95],
           }}
           transition={{
             duration: item.duration,
@@ -77,18 +78,19 @@ export default function FloatingMathBackground() {
             ease: "easeInOut",
           }}
         >
-          {/* 🔥 Symbol Rendering */}
           {item.type === "symbol" && item.symbol}
 
-          {/* 🔥 Shape Rendering */}
           {item.type === "shape" && item.shape === "circle" && (
-            <div className="rounded-full" style={{ width: item.size, height: item.size, background: item.color }} />
+            <div
+              className="rounded-full"
+              style={{ width: item.size, height: item.size, background: item.color }}
+            />
           )}
-
           {item.type === "shape" && item.shape === "square" && (
-            <div style={{ width: item.size, height: item.size, background: item.color, borderRadius: 8 }} />
+            <div
+              style={{ width: item.size, height: item.size, background: item.color, borderRadius: 6 }}
+            />
           )}
-
           {item.type === "shape" && item.shape === "triangle" && (
             <div
               style={{
@@ -100,7 +102,6 @@ export default function FloatingMathBackground() {
               }}
             />
           )}
-
           {item.type === "shape" && item.shape === "hexagon" && (
             <div
               style={{
