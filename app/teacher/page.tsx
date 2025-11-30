@@ -11,6 +11,10 @@ export default function TeacherPage() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
+  // ✅ Online / offline state
+  const [isOnline, setIsOnline] = useState(true);
+  const [showOfflineModal, setShowOfflineModal] = useState(false);
+
   // 🔍 Check authentication
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
@@ -19,6 +23,33 @@ export default function TeacherPage() {
     });
     return () => unsub();
   }, []);
+
+  // 🔌 Track online / offline status
+  useEffect(() => {
+    if (typeof navigator !== "undefined") {
+      setIsOnline(navigator.onLine);
+    }
+
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  // 🛡️ Guarded navigation – blocks when offline
+  function navigateProtected(path: string) {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      setShowOfflineModal(true);
+      return;
+    }
+    router.push(path);
+  }
 
   if (loading) return <main style={loadingScreen}>Checking login...</main>;
 
@@ -45,15 +76,18 @@ export default function TeacherPage() {
           label={user ? "CREATE ROOM" : "LOGIN FIRST TO CREATE"}
           color={user ? "#00ffa3" : "#ff6ad5"}
           onClick={() => {
-            if (!user) return router.push("/auth/login");
-            router.push("/teacher/create");
+            if (!user) {
+              navigateProtected("/auth/login");
+            } else {
+              navigateProtected("/teacher/create");
+            }
           }}
         />
 
         <MenuButton
           label="JOIN ROOM"
           color="#14b8ff"
-          onClick={() => router.push("/teacher/join")}
+          onClick={() => navigateProtected("/teacher/join")}
         />
 
         {/* Show Login Button if not signed in */}
@@ -61,7 +95,7 @@ export default function TeacherPage() {
           <MenuButton
             label="LOGIN WITH GOOGLE"
             color="white"
-            onClick={() => router.push("/auth/login")}
+            onClick={() => navigateProtected("/auth/login")}
           />
         )}
 
@@ -70,7 +104,53 @@ export default function TeacherPage() {
             Logged in as <b>{user.displayName}</b> ✔
           </p>
         )}
+
+        {/* Small online/offline indicator */}
+        <p
+          style={{
+            marginTop: 6,
+            fontSize: 12,
+            color: isOnline ? "#6ee7b7" : "#fecaca",
+          }}
+        >
+          Status: {isOnline ? "Online" : "Offline mode"}
+        </p>
       </div>
+
+      {/* 🔔 Offline modal */}
+      {showOfflineModal && (
+        <div style={modalOverlay}>
+          <motion.div
+            initial={{ scale: 0.7, opacity: 0, y: 20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 220, damping: 18 }}
+            style={modalCard}
+          >
+            <div style={modalIconWrap}>
+              <span style={modalIcon}>📡</span>
+            </div>
+
+            <h2 style={modalTitle}>Internet Needed</h2>
+            <p style={modalText}>
+              Teacher features like <b>Create Room</b>, <b>Join Room</b>, and{" "}
+              <b>Login</b> need an internet connection.
+              <br />
+              <span style={{ color: "#6ee7ff" }}>
+                Please reconnect to continue.
+              </span>
+            </p>
+
+            <button
+              type="button"
+              onClick={() => setShowOfflineModal(false)}
+              style={modalButton}
+            >
+              Got it
+            </button>
+          </motion.div>
+        </div>
+      )}
     </main>
   );
 }
@@ -109,7 +189,7 @@ function MenuButton({
   );
 }
 
-/* =========== FIXED TYPES BELOW =========== */
+/* =========== STYLES =========== */
 const page: CSSProperties = {
   minHeight: "100vh",
   background: "linear-gradient(180deg,#0a0f24,#111827)",
@@ -136,4 +216,75 @@ const loadingScreen: CSSProperties = {
   color: "white",
   background: "#0a0f24",
   fontSize: 22,
+};
+
+/* Modal styles */
+const modalOverlay: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(15,23,42,0.85)",
+  backdropFilter: "blur(6px)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  zIndex: 50,
+};
+
+const modalCard: CSSProperties = {
+  width: "90%",
+  maxWidth: 360,
+  borderRadius: 20,
+  padding: "20px 18px 18px",
+  background:
+    "radial-gradient(circle at top, rgba(56,189,248,0.18), transparent 55%), linear-gradient(180deg,#020617,#020617f0)",
+  border: "1px solid rgba(148,163,184,0.8)",
+  boxShadow: "0 24px 60px rgba(0,0,0,0.9)",
+  textAlign: "center",
+  color: "#e5e7eb",
+};
+
+const modalIconWrap: CSSProperties = {
+  width: 56,
+  height: 56,
+  borderRadius: 999,
+  margin: "0 auto 10px",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background:
+    "radial-gradient(circle at top, rgba(56,189,248,0.45), rgba(15,23,42,0.95))",
+  boxShadow: "0 0 20px rgba(56,189,248,0.7)",
+};
+
+const modalIcon: CSSProperties = {
+  fontSize: 30,
+};
+
+const modalTitle: CSSProperties = {
+  fontSize: 20,
+  fontWeight: 700,
+  marginBottom: 6,
+};
+
+const modalText: CSSProperties = {
+  fontSize: 13,
+  color: "#9ca3af",
+  lineHeight: 1.6,
+  marginBottom: 16,
+};
+
+const modalButton: CSSProperties = {
+  marginTop: 4,
+  width: "100%",
+  padding: "10px 14px",
+  borderRadius: 999,
+  border: "none",
+  background:
+    "linear-gradient(135deg,#38bdf8,#22c55e)",
+  color: "#020617",
+  fontWeight: 700,
+  fontSize: 13,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+  cursor: "pointer",
 };

@@ -2,11 +2,41 @@
 
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import type { CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import BackgroundSymbols from "./components/BackgroundSymbols";
 
 export default function Home() {
   const router = useRouter();
+
+  const [isOnline, setIsOnline] = useState(true);
+  const [showOfflineModal, setShowOfflineModal] = useState(false);
+
+  // 🔌 Track online / offline status
+  useEffect(() => {
+    if (typeof navigator !== "undefined") {
+      setIsOnline(navigator.onLine);
+    }
+
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  // 🛡️ Guard for routes that NEED internet (teacher & auth)
+  function navigateProtected(path: string) {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      setShowOfflineModal(true);
+      return;
+    }
+    router.push(path);
+  }
 
   return (
     <main style={mainStyle}>
@@ -22,19 +52,90 @@ export default function Home() {
       </motion.h1>
 
       <div style={menuBox}>
-        <Button label="STUDENT" color="#00FFA3" onClick={() => router.push("/student")} />
-        <Button label="TEACHER" color="#14B8FF" onClick={() => router.push("/teacher")} />
+        {/* STUDENT – always allowed, even offline */}
+        <Button
+          label="STUDENT"
+          color="#00FFA3"
+          onClick={() => router.push("/student")}
+        />
+
+        {/* TEACHER – blocked when offline */}
+        <Button
+          label="TEACHER"
+          color="#14B8FF"
+          onClick={() => navigateProtected("/teacher")}
+        />
 
         <div style={{ marginTop: 30 }}>
-          <Button label="LOGIN WITH GOOGLE" color="#FFF" onClick={() => router.push("/auth/login")} />
+          {/* LOGIN – blocked when offline */}
+          <Button
+            label="LOGIN WITH GOOGLE"
+            color="#FFF"
+            onClick={() => navigateProtected("/auth/login")}
+          />
         </div>
+
+        {/* Tiny status text (optional, nice UX) */}
+        <p
+          style={{
+            marginTop: 14,
+            fontSize: 12,
+            textAlign: "center",
+            color: isOnline ? "#6ee7b7" : "#fecaca",
+          }}
+        >
+          Status: {isOnline ? "Online" : "Offline mode"}
+        </p>
       </div>
+
+      {/* 🔔 Offline popup modal (only for Teacher / Login) */}
+      {showOfflineModal && (
+        <div style={modalOverlay}>
+          <motion.div
+            initial={{ scale: 0.7, opacity: 0, y: 20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 220, damping: 18 }}
+            style={modalCard}
+          >
+            <div style={modalIconWrap}>
+              <span style={modalIcon}>📡</span>
+            </div>
+
+            <h2 style={modalTitle}>Internet Needed</h2>
+            <p style={modalText}>
+              <b>Teacher Mode</b> and <b>Login</b> use online features like
+              rooms and authentication.
+              <br />
+              <span style={{ color: "#6ee7ff" }}>
+                You&apos;re currently offline — please reconnect to continue.
+              </span>
+            </p>
+
+            <button
+              type="button"
+              onClick={() => setShowOfflineModal(false)}
+              style={modalButton}
+            >
+              Got it
+            </button>
+          </motion.div>
+        </div>
+      )}
     </main>
   );
 }
 
 /* BUTTON UI */
-function Button({ label, onClick, color }: { label: string; onClick: () => void; color: string }) {
+function Button({
+  label,
+  onClick,
+  color,
+}: {
+  label: string;
+  onClick: () => void;
+  color: string;
+}) {
   return (
     <motion.button
       whileHover={{ scale: 1.04 }}
@@ -86,4 +187,74 @@ const menuBox: CSSProperties = {
   display: "flex",
   flexDirection: "column",
   gap: 18,
+};
+
+/* Modal styles */
+const modalOverlay: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(15,23,42,0.85)",
+  backdropFilter: "blur(6px)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  zIndex: 50,
+};
+
+const modalCard: CSSProperties = {
+  width: "90%",
+  maxWidth: 360,
+  borderRadius: 20,
+  padding: "20px 18px 18px",
+  background:
+    "radial-gradient(circle at top, rgba(56,189,248,0.18), transparent 55%), linear-gradient(180deg,#020617,#020617f0)",
+  border: "1px solid rgba(148,163,184,0.8)",
+  boxShadow: "0 24px 60px rgba(0,0,0,0.9)",
+  textAlign: "center",
+  color: "#e5e7eb",
+};
+
+const modalIconWrap: CSSProperties = {
+  width: 56,
+  height: 56,
+  borderRadius: 999,
+  margin: "0 auto 10px",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background:
+    "radial-gradient(circle at top, rgba(56,189,248,0.45), rgba(15,23,42,0.95))",
+  boxShadow: "0 0 20px rgba(56,189,248,0.7)",
+};
+
+const modalIcon: CSSProperties = {
+  fontSize: 30,
+};
+
+const modalTitle: CSSProperties = {
+  fontSize: 20,
+  fontWeight: 700,
+  marginBottom: 6,
+};
+
+const modalText: CSSProperties = {
+  fontSize: 13,
+  color: "#9ca3af",
+  lineHeight: 1.6,
+  marginBottom: 16,
+};
+
+const modalButton: CSSProperties = {
+  marginTop: 4,
+  width: "100%",
+  padding: "10px 14px",
+  borderRadius: 999,
+  border: "none",
+  background: "linear-gradient(135deg,#38bdf8,#22c55e)",
+  color: "#020617",
+  fontWeight: 700,
+  fontSize: 13,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+  cursor: "pointer",
 };
