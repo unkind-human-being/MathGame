@@ -1,25 +1,28 @@
 // public/service-worker.js
 
-// 🔹 Bump this when you change offline assets
+// 🔹 Change this when you update what gets cached
 const CACHE_NAME = "asmath-pwa-cache-v1";
 
 const OFFLINE_URL = "/offline";
 
-// 🔹 Files to precache
+// 🔹 Files to precache (must be reachable when online)
 const PRECACHE_URLS = [
-  "/",                 // Home page
+  "/",                 // Home page (app/page.tsx)
   OFFLINE_URL,         // Offline fallback page
   "/manifest.json",    // PWA manifest
   "/favicon.ico",
-  "/icons/icon/512x512.png"
-  // You can add more game assets here (sounds, images, etc.)
-  // e.g. "/sounds/correct.mp3"
+  "/icons/icon/512x512.png",
+  // Add more game assets here if you want them always available offline:
+  // "/sounds/correct.mp3",
+  // "/sounds/wrong.mp3",
+  // "/images/logo.png",
 ];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS))
   );
+  // Activate this service worker immediately after installation
   self.skipWaiting();
 });
 
@@ -36,40 +39,47 @@ self.addEventListener("activate", (event) => {
       )
     )
   );
-  return self.clients.claim();
+  // Take control of all clients as soon as this SW activates
+  self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
   const request = event.request;
 
+  // Only handle GET requests
   if (request.method !== "GET") return;
 
   const url = new URL(request.url);
 
-  // 🔹 Page navigations → network first, then offline page
+  // 🔹 1. Handle full page navigations
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request)
         .then((response) => {
+          // Save a copy in cache for future offline use
           const copy = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
           return response;
         })
         .catch(async () => {
+          // If network fails, try cached version of this page
           const cachedResponse = await caches.match(request);
           if (cachedResponse) return cachedResponse;
+
+          // If not in cache, fall back to the offline page
           return caches.match(OFFLINE_URL);
         })
     );
     return;
   }
 
-  // 🔹 Same-origin static assets → cache first, then network update
+  // 🔹 2. Handle same-origin static assets (JS, CSS, images, etc.)
   if (url.origin === self.location.origin) {
     event.respondWith(
       caches.match(request).then((cachedResponse) => {
         if (cachedResponse) {
-          // Update in background
+          // Return cached asset immediately…
+          // …and refresh it in the background
           fetch(request)
             .then((networkResponse) => {
               if (networkResponse && networkResponse.status === 200) {
@@ -78,10 +88,14 @@ self.addEventListener("fetch", (event) => {
                 );
               }
             })
-            .catch(() => {});
+            .catch(() => {
+              // Ignore network errors for background refresh
+            });
+
           return cachedResponse;
         }
 
+        // If not cached yet → try network, then cache it
         return fetch(request)
           .then((networkResponse) => {
             if (networkResponse && networkResponse.status === 200) {
@@ -93,16 +107,19 @@ self.addEventListener("fetch", (event) => {
             return networkResponse;
           })
           .catch(async () => {
+            // If offline and not in cache at all
             const anyCached = await caches.match(request);
             if (anyCached) return anyCached;
 
+            // Last resort: plain offline response
             return new Response("Offline and resource not cached.", {
               status: 503,
-              statusText: "Service Unavailable"
+              statusText: "Service Unavailable",
             });
           });
       })
     );
   }
-  // Cross-origin → default browser behavior
+
+  // 🔹 3. For cross-origin requests, let the browser handle it normally
 });

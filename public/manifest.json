@@ -1,4 +1,5 @@
 {
+  "id": "/",
   "name": "ASMATH | Math Challenge",
   "short_name": "ASMATH",
   "description": "Offline-ready math challenge game for students.",
@@ -22,5 +23,7 @@
       "type": "image/png",
       "purpose": "any maskable"
     }
-  ]
+  ],
+  "categories": ["education", "games"],
+  "prefer_related_applications": false
 }
