@@ -1,13 +1,25 @@
 // app/offline/page.tsx
 export default function OfflinePage() {
   return (
-    <main className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-50">
-      <div className="max-w-md text-center space-y-4">
-        <div className="text-4xl">📴</div>
-        <h1 className="text-2xl font-semibold">You&apos;re offline</h1>
-        <p className="text-sm text-slate-300">
-          ASMATH can&apos;t reach the server right now.
-          You can still reopen the app from your home screen.
+    <main
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "#020617",
+        color: "white",
+        padding: "20px",
+        textAlign: "center",
+      }}
+    >
+      <div>
+        <h1 style={{ fontSize: "24px", fontWeight: 700 }}>
+          📴 You&apos;re offline
+        </h1>
+        <p style={{ marginTop: "8px", fontSize: "14px", color: "#9ca3af" }}>
+          AZMATH can still open, but it needs internet to load new questions.
+          Reconnect to continue your math challenge.
         </p>
       </div>
     </main>

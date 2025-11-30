@@ -11,7 +11,7 @@ const PRECACHE_URLS = [
   OFFLINE_URL,         // Offline fallback page
   "/manifest.json",    // PWA manifest
   "/favicon.ico",
-  "/icons/icon/512x512.png",
+  "/icons/icon/512x512.png"
   // Add more game assets here if you want them always available offline:
   // "/sounds/correct.mp3",
   // "/sounds/wrong.mp3",
@@ -114,7 +114,7 @@ self.addEventListener("fetch", (event) => {
             // Last resort: plain offline response
             return new Response("Offline and resource not cached.", {
               status: 503,
-              statusText: "Service Unavailable",
+              statusText: "Service Unavailable"
             });
           });
       })
