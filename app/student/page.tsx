@@ -67,6 +67,16 @@ export default function StudentGame() {
       setIndex(0);
       setScore(0);
 
+      // ✅ If offline, don't even try Firestore
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        setQuestions([]);
+        setLoadError(
+          "You are offline. Connect to the internet to load questions."
+        );
+        setLoadingQuestions(false);
+        return;
+      }
+
       try {
         const colRef = collection(db, collectionName(difficulty));
         const q = query(colRef, orderBy("createdAt", "asc"));
@@ -106,14 +116,22 @@ export default function StudentGame() {
     if (isLast) {
       setFinished(true);
 
-      // SAVE SCORE IN FIRESTORE
-      if (user) {
-        await setDoc(doc(db, "studentScores", user.uid), {
-          score: nextScore,
-          totalQuestions: questions.length,
-          difficulty,
-          finishedAt: Date.now(),
-        });
+      // SAVE SCORE IN FIRESTORE (only if online)
+      if (
+        user &&
+        typeof navigator !== "undefined" &&
+        navigator.onLine
+      ) {
+        try {
+          await setDoc(doc(db, "studentScores", user.uid), {
+            score: nextScore,
+            totalQuestions: questions.length,
+            difficulty,
+            finishedAt: Date.now(),
+          });
+        } catch (err) {
+          console.warn("Failed to save score (maybe offline):", err);
+        }
       }
     } else {
       setIndex(index + 1);
@@ -315,7 +333,7 @@ export default function StudentGame() {
     );
   }
 
-  // No questions set by admin yet
+  // No questions set by admin yet OR offline case
   if (!loadingQuestions && questions.length === 0) {
     return (
       <main
@@ -338,7 +356,9 @@ export default function StudentGame() {
             marginBottom: "8px",
           }}
         >
-          No questions available
+          {loadError
+            ? "Cannot load questions"
+            : "No questions available"}
         </h2>
         <p
           style={{
@@ -347,15 +367,19 @@ export default function StudentGame() {
             maxWidth: "360px",
           }}
         >
-          The admin hasn&apos;t added any questions yet for{" "}
-          <span
-            style={{
-              color: difficultyColors[difficulty],
-            }}
-          >
-            {difficultyLabels[difficulty]}
-          </span>{" "}
-          mode.
+          {loadError
+            ? loadError
+            : <>
+                The admin hasn&apos;t added any questions yet for{" "}
+                <span
+                  style={{
+                    color: difficultyColors[difficulty!],
+                  }}
+                >
+                  {difficultyLabels[difficulty!]}
+                </span>{" "}
+                mode.
+              </>}
         </p>
 
         <button
@@ -382,7 +406,8 @@ export default function StudentGame() {
               color: "#fecaca",
             }}
           >
-            {loadError}
+            Tip: open AZMATH while online at least once so questions can
+            sync and be available next time.
           </p>
         )}
       </main>

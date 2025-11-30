@@ -1,14 +1,18 @@
 // public/service-worker.js
 
-const CACHE_NAME = "asmath-pwa-cache-v1";
+const CACHE_NAME = "asmath-pwa-cache-v2"; // bump version
 const OFFLINE_URL = "/offline";
 
+// Cache the app shell (UI pages + key assets)
 const PRECACHE_URLS = [
   "/",                 // Home page
+  "/student",          // Student game shell
+  "/teacher",          // Teacher page shell
+  "/auth/login",       // Login shell (if exists)
   OFFLINE_URL,         // Offline fallback page
   "/manifest.json",    // PWA manifest
   "/favicon.ico",
-  "/icons/icon-512x512.png"  // 👈 match your real file path
+  "/icons/icon-512x512.png" // match your actual file path
 ];
 
 self.addEventListener("install", (event) => {
@@ -40,6 +44,7 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
 
+  // 1) Page navigations → network first, then cache, then /offline
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request)
@@ -57,10 +62,12 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // 2) Same-origin static assets → cache first, then update in background
   if (url.origin === self.location.origin) {
     event.respondWith(
       caches.match(request).then((cachedResponse) => {
         if (cachedResponse) {
+          // refresh in background
           fetch(request)
             .then((networkResponse) => {
               if (networkResponse && networkResponse.status === 200) {
@@ -73,6 +80,7 @@ self.addEventListener("fetch", (event) => {
           return cachedResponse;
         }
 
+        // not cached yet → try network, then cache it
         return fetch(request)
           .then((networkResponse) => {
             if (networkResponse && networkResponse.status === 200) {
