@@ -13,11 +13,12 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-// 👇 PWA metadata
 export const metadata: Metadata = {
-  title: "AZMATH",
+  title: "ASMATH | Math Challenge",
   description: "Offline-ready math challenge game.",
   themeColor: "#0f172a",
+  // This tells Next where your manifest is
+  manifest: "/manifest.json",
   icons: {
     icon: "/favicon.ico",
     apple: "/icons/icon/512x512.png",
@@ -32,19 +33,18 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        {/* Link to manifest explicitly */}
-        <link rel="manifest" href="/manifest.json" />
-
         {/* PWA + iOS full-screen behavior */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta
           name="apple-mobile-web-app-status-bar-style"
           content="black-translucent"
         />
-        <meta name="apple-mobile-web-app-title" content="AZMATH" />
-        <meta name="theme-color" content="#0f172a" />
+        <meta name="apple-mobile-web-app-title" content="ASMATH" />
 
-        {/* 🔹 Service worker registration (no extra file needed) */}
+        {/* Explicit manifest link (helps some browsers) */}
+        <link rel="manifest" href="/manifest.json" />
+
+        {/* Service worker registration (inline, like a hidden helper) */}
         <script
           dangerouslySetInnerHTML={{
             __html: `

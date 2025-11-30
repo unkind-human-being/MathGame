@@ -1,28 +1,26 @@
 // public/service-worker.js
 
-// 🔹 Change this when you update what gets cached
+// 🔹 Bump this when you change offline assets
 const CACHE_NAME = "asmath-pwa-cache-v1";
 
 const OFFLINE_URL = "/offline";
 
-// 🔹 Files to precache (must be reachable when online)
+// 🔹 Files to precache
 const PRECACHE_URLS = [
-  "/",                 // Home page (app/page.tsx)
+  "/",                 // Home page
   OFFLINE_URL,         // Offline fallback page
   "/manifest.json",    // PWA manifest
   "/favicon.ico",
   "/icons/icon/512x512.png"
-  // Add more game assets here if you want them always available offline:
+  // Add more game assets here if you want them always cached:
   // "/sounds/correct.mp3",
   // "/sounds/wrong.mp3",
-  // "/images/logo.png",
 ];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS))
   );
-  // Activate this service worker immediately after installation
   self.skipWaiting();
 });
 
@@ -39,47 +37,40 @@ self.addEventListener("activate", (event) => {
       )
     )
   );
-  // Take control of all clients as soon as this SW activates
-  self.clients.claim();
+  return self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
   const request = event.request;
 
-  // Only handle GET requests
   if (request.method !== "GET") return;
 
   const url = new URL(request.url);
 
-  // 🔹 1. Handle full page navigations
+  // 🔹 Page navigations → network first, then offline page
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          // Save a copy in cache for future offline use
           const copy = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
           return response;
         })
         .catch(async () => {
-          // If network fails, try cached version of this page
           const cachedResponse = await caches.match(request);
           if (cachedResponse) return cachedResponse;
-
-          // If not in cache, fall back to the offline page
           return caches.match(OFFLINE_URL);
         })
     );
     return;
   }
 
-  // 🔹 2. Handle same-origin static assets (JS, CSS, images, etc.)
+  // 🔹 Same-origin static assets → cache first, then network update
   if (url.origin === self.location.origin) {
     event.respondWith(
       caches.match(request).then((cachedResponse) => {
         if (cachedResponse) {
-          // Return cached asset immediately…
-          // …and refresh it in the background
+          // Update in background
           fetch(request)
             .then((networkResponse) => {
               if (networkResponse && networkResponse.status === 200) {
@@ -88,14 +79,10 @@ self.addEventListener("fetch", (event) => {
                 );
               }
             })
-            .catch(() => {
-              // Ignore network errors for background refresh
-            });
-
+            .catch(() => {});
           return cachedResponse;
         }
 
-        // If not cached yet → try network, then cache it
         return fetch(request)
           .then((networkResponse) => {
             if (networkResponse && networkResponse.status === 200) {
@@ -107,11 +94,9 @@ self.addEventListener("fetch", (event) => {
             return networkResponse;
           })
           .catch(async () => {
-            // If offline and not in cache at all
             const anyCached = await caches.match(request);
             if (anyCached) return anyCached;
 
-            // Last resort: plain offline response
             return new Response("Offline and resource not cached.", {
               status: 503,
               statusText: "Service Unavailable"
@@ -120,6 +105,5 @@ self.addEventListener("fetch", (event) => {
       })
     );
   }
-
-  // 🔹 3. For cross-origin requests, let the browser handle it normally
+  // Cross-origin → default browser behavior
 });
