@@ -54,14 +54,14 @@ export default function Home() {
       <div style={menuBox}>
         {/* STUDENT – always allowed, even offline */}
         <Button
-          label="STUDENT"
+          label="PLAY"
           color="#00FFA3"
           onClick={() => router.push("/student")}
         />
 
         {/* TEACHER – blocked when offline */}
         <Button
-          label="TEACHER"
+          label="LECTURE"
           color="#14B8FF"
           onClick={() => navigateProtected("/teacher")}
         />
