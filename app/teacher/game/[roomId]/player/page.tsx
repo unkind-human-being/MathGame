@@ -22,15 +22,10 @@ type QSet = {
   imageUrl?: string;
 };
 
-type Mode =
-  | "waiting"
-  | "activity"
-  | "waitingExam"
-  | "exam"
-  | "done"
-  | "results";
+type Mode = "waiting" | "activity" | "waitingExam" | "exam" | "done" | "results";
 
 /* ========= HELPERS ========= */
+
 // 🔀 Randomize question order per player
 function shuffleQuestions(list: QSet[]): QSet[] {
   const copy = [...list];
@@ -39,6 +34,21 @@ function shuffleQuestions(list: QSet[]): QSet[] {
     [copy[i], copy[j]] = [copy[j], copy[i]];
   }
   return copy;
+}
+
+// 🌀 Force Cloudinary images to WebP (with compression)
+// Works for URLs like: https://res.cloudinary.com/<name>/image/upload/....
+// If it's not Cloudinary, just return the original URL.
+function toWebpUrl(url: string | undefined | null): string {
+  if (!url) return "";
+  if (!url.includes("res.cloudinary.com") || !url.includes("/upload/")) {
+    return url;
+  }
+  // insert f_webp,q_auto,w_800 right after /upload/
+  return url.replace(
+    "/upload/",
+    "/upload/f_webp,q_auto,w_800/"
+  );
 }
 
 /* ========= MAIN ========= */
@@ -68,7 +78,7 @@ export default function PlayerScreen() {
   const [musicEnabled, setMusicEnabled] = useState(true);
   const [fxEnabled, setFxEnabled] = useState(true);
 
-  // Init audio objects on client (same style as StudentGame)
+  // Init audio objects on client
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -111,7 +121,7 @@ export default function PlayerScreen() {
     }
   }, [mode, musicEnabled]);
 
-  // Click SFX, same instant behavior as StudentGame
+  // Click SFX
   function playClick() {
     if (!fxEnabled) return;
     const audio = clickFxRef.current;
@@ -236,6 +246,13 @@ export default function PlayerScreen() {
     </main>
   );
 
+  const sortedPlayers = [...leaderboard].sort(
+    (a, b) =>
+      (b.activityScore ?? 0) +
+      (b.examScore ?? 0) -
+      ((a.activityScore ?? 0) + (a.examScore ?? 0))
+  );
+
   /* ========= UI SCREENS ========= */
 
   // WAITING FOR ACTIVITY
@@ -288,6 +305,9 @@ export default function PlayerScreen() {
     const headerColor = mode === "activity" ? "#22c55e" : "#38bdf8";
     const headerLabel = mode === "activity" ? "Activity Round" : "Exam Round";
 
+    // 👉 ensure question image uses WebP URL
+    const qImgSrc = q.imageUrl ? toWebpUrl(q.imageUrl) : "";
+
     return PageWrap(
       <div style={mainShell}>
         {/* TOP BAR */}
@@ -331,12 +351,12 @@ export default function PlayerScreen() {
             style={questionCard}
           >
             {/* Question image (optional) */}
-            {q.imageUrl && (
+            {q.imageUrl && qImgSrc && (
               <div style={{ marginBottom: 14 }}>
                 <img
-                  src={q.imageUrl}
+                  src={qImgSrc}
                   style={questionImg}
-                  onClick={() => setViewImg(q.imageUrl!)}
+                  onClick={() => setViewImg(qImgSrc)}
                 />
               </div>
             )}
@@ -508,14 +528,17 @@ const SlidesGrid = ({
 }) =>
   !roomInfo?.slides ? null : (
     <div style={grid}>
-      {roomInfo.slides.map((img: string, i: number) => (
-        <img
-          key={i}
-          src={img}
-          style={thumb}
-          onClick={() => setViewImg(img)}
-        />
-      ))}
+      {roomInfo.slides.map((rawImg: string, i: number) => {
+        const img = toWebpUrl(rawImg); // 👉 convert slide to WebP
+        return (
+          <img
+            key={i}
+            src={img}
+            style={thumb}
+            onClick={() => setViewImg(img)}
+          />
+        );
+      })}
     </div>
   );
 
@@ -525,7 +548,7 @@ const FullImage = ({ img, close }: { img: string; close: () => void }) => (
   </div>
 );
 
-/* Animated answer button (soft gameplay) */
+/* Animated answer button */
 function AnswerBox({
   label,
   color,
@@ -559,7 +582,7 @@ function AnswerBox({
   );
 }
 
-/* Small wrapper for centered single-screen messages */
+/* Centered shell */
 function CenteredShell({ children }: { children: React.ReactNode }) {
   return (
     <div
@@ -687,7 +710,6 @@ const fullImg: CSSProperties = {
   borderRadius: 8,
 };
 
-/* Leaderboard table */
 const table: CSSProperties = {
   width: "100%",
   marginTop: 14,
@@ -748,7 +770,6 @@ const row: CSSProperties = {
   cursor: "pointer",
 };
 
-/* Question image style */
 const questionImg: CSSProperties = {
   width: "100%",
   maxHeight: 260,
