@@ -18,7 +18,7 @@ type QSet = {
   number: number;
   question: string;
   answers: string[];
-  correct: string;
+  correct: string; // correct answer TEXT
   imageUrl?: string;
 };
 
@@ -26,29 +26,58 @@ type Mode = "waiting" | "activity" | "waitingExam" | "exam" | "done" | "results"
 
 /* ========= HELPERS ========= */
 
-// 🔀 Randomize question order per player
-function shuffleQuestions(list: QSet[]): QSet[] {
+/** Simple string -> deterministic numeric seed */
+function stringToSeed(str: string): number {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = Math.imul(31, h) + str.charCodeAt(i);
+  }
+  return h >>> 0;
+}
+
+/** Deterministic PRNG (mulberry32) */
+function mulberry32(a: number) {
+  return function () {
+    let t = (a += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Seeded shuffle so same (roomId+uid) => same order, different uid => different order */
+function seededShuffle<T>(list: T[], seedKey: string): T[] {
   const copy = [...list];
+  const rand = mulberry32(stringToSeed(seedKey));
+
   for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rand() * (i + 1));
     [copy[i], copy[j]] = [copy[j], copy[i]];
   }
   return copy;
 }
 
+/** Prepare questions for a specific player:
+ *  - shuffle question order (seeded per player + round type)
+ *  - shuffle answers inside each question (seeded per question)
+ */
+function prepareQuestions(list: QSet[], seedBase: string): QSet[] {
+  const shuffledQuestions = seededShuffle(list, seedBase + ":questions");
+  return shuffledQuestions.map((q, idx) => ({
+    ...q,
+    answers: q.answers
+      ? seededShuffle(q.answers, `${seedBase}:q:${q.number ?? idx}`)
+      : [],
+  }));
+}
+
 // 🌀 Force Cloudinary images to WebP (with compression)
-// Works for URLs like: https://res.cloudinary.com/<name>/image/upload/....
-// If it's not Cloudinary, just return the original URL.
 function toWebpUrl(url: string | undefined | null): string {
   if (!url) return "";
   if (!url.includes("res.cloudinary.com") || !url.includes("/upload/")) {
     return url;
   }
-  // insert f_webp,q_auto,w_800 right after /upload/
-  return url.replace(
-    "/upload/",
-    "/upload/f_webp,q_auto,w_800/"
-  );
+  return url.replace("/upload/", "/upload/f_webp,q_auto,w_800/");
 }
 
 /* ========= MAIN ========= */
@@ -58,7 +87,7 @@ export default function PlayerScreen() {
   const router = useRouter();
 
   const roomId = params.roomId as string;
-  const uid = searchParams.get("uid") as string;
+  const uid = (searchParams.get("uid") as string) || "";
 
   /* ========= STATE ========= */
   const [roomInfo, setRoomInfo] = useState<any>(null);
@@ -67,7 +96,7 @@ export default function PlayerScreen() {
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [viewImg, setViewImg] = useState<string | null>(null);
   const [index, setIndex] = useState(0);
-  const [roundScore, setRoundScore] = useState(0);
+  const [roundScore, setRoundScore] = useState(0); // hidden from UI but used for saving
   const [mode, setMode] = useState<Mode>("waiting");
 
   /* ========= AUDIO ========= */
@@ -161,6 +190,8 @@ export default function PlayerScreen() {
 
   /* ========= LOAD QUESTIONS ========= */
   useEffect(() => {
+    if (!uid) return; // wait until uid is available
+
     async function load() {
       const A = await getDocs(collection(db, "rooms", roomId, "activity"));
       const E = await getDocs(collection(db, "rooms", roomId, "exam"));
@@ -169,12 +200,12 @@ export default function PlayerScreen() {
       A.forEach((d) => act.push(d.data() as QSet));
       E.forEach((d) => ex.push(d.data() as QSet));
 
-      // 🔀 shuffle so each player sees different order
-      setActivityQ(shuffleQuestions(act));
-      setExamQ(shuffleQuestions(ex));
+      // 🔀 shuffle questions + answers per player (seeded by room + uid)
+      setActivityQ(prepareQuestions(act, `activity-${roomId}-${uid}`));
+      setExamQ(prepareQuestions(ex, `exam-${roomId}-${uid}`));
     }
     load();
-  }, [roomId]);
+  }, [roomId, uid]);
 
   /* ========= ANSWER ========= */
   async function select(ans: string) {
@@ -184,7 +215,7 @@ export default function PlayerScreen() {
     const current = list[index];
     if (!current) return;
 
-    const ok = ans === current.correct;
+    const ok = ans === current.correct; // still valid even after shuffling answers
     const next = index + 1 === list.length;
     const score = roundScore + (ok ? 1 : 0);
 
@@ -325,17 +356,10 @@ export default function PlayerScreen() {
             </div>
           </div>
 
-          <div style={{ textAlign: "center" }}>
+          <div style={{ textAlign: "right" }}>
             <p style={topLabel}>Question</p>
             <div style={{ ...pill, borderColor: "#a855f7", color: "#e5e7eb" }}>
               {index + 1} / {total}
-            </div>
-          </div>
-
-          <div style={{ textAlign: "right" }}>
-            <p style={topLabel}>Score</p>
-            <div style={{ ...pill, borderColor: "#22c55e", color: "#bbf7d0" }}>
-              {roundScore}
             </div>
           </div>
         </header>
@@ -368,7 +392,7 @@ export default function PlayerScreen() {
 
         {viewImg && <FullImage img={viewImg} close={() => setViewImg(null)} />}
 
-        {/* ANSWER CHOICES */}
+        {/* ANSWER CHOICES (shuffled per player) */}
         <div style={answersWrap}>
           {q.answers.map((a, i) => {
             const color =
@@ -393,12 +417,12 @@ export default function PlayerScreen() {
 
         {mode === "activity" && (
           <p style={{ ...subtitle, marginTop: 14, fontSize: 12 }}>
-            Your Activity score will be saved when this round ends.
+            Your Activity result will be saved when this round ends.
           </p>
         )}
         {mode === "exam" && (
           <p style={{ ...subtitle, marginTop: 14, fontSize: 12 }}>
-            Your Exam score will be saved at the end of this round.
+            Your Exam result will be saved at the end of this round.
           </p>
         )}
       </div>
@@ -548,7 +572,6 @@ const FullImage = ({ img, close }: { img: string; close: () => void }) => (
   </div>
 );
 
-/* Animated answer button */
 function AnswerBox({
   label,
   color,
@@ -582,7 +605,6 @@ function AnswerBox({
   );
 }
 
-/* Centered shell */
 function CenteredShell({ children }: { children: React.ReactNode }) {
   return (
     <div
@@ -634,8 +656,8 @@ const subtitle: CSSProperties = {
 };
 
 const topBar: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "1fr auto 1fr",
+  display: "flex",
+  justifyContent: "space-between",
   alignItems: "center",
   marginBottom: 18,
   gap: 10,
