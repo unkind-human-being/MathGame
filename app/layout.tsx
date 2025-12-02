@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ASMATH | Math Challenge",
+  title: "AZMATH | Math Challenge",
   description: "Offline-ready math challenge game.",
   themeColor: "#0f172a",
   // This tells Next where your manifest is
