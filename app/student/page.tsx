@@ -62,6 +62,38 @@ function shuffleQuestions(arr: Question[]): Question[] {
   return copy;
 }
 
+/* ========= LOCAL CACHE HELPERS (OFFLINE SUPPORT) ========= */
+
+const STORAGE_PREFIX = "azmath_questions_";
+
+function saveQuestionsToCache(diff: Difficulty, qs: Question[]) {
+  if (typeof window === "undefined") return;
+  try {
+    const payload = {
+      savedAt: Date.now(),
+      questions: qs,
+    };
+    localStorage.setItem(`${STORAGE_PREFIX}${diff}`, JSON.stringify(payload));
+  } catch (err) {
+    console.warn("Failed to cache questions:", err);
+  }
+}
+
+function loadQuestionsFromCache(diff: Difficulty): Question[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(`${STORAGE_PREFIX}${diff}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && Array.isArray(parsed.questions)) {
+      return parsed.questions as Question[];
+    }
+  } catch (err) {
+    console.warn("Failed to read cached questions:", err);
+  }
+  return null;
+}
+
 export default function StudentGame() {
   const [user, setUser] = useState<any>(null);
   const router = useRouter();
@@ -91,7 +123,7 @@ export default function StudentGame() {
   const bigStreakRef = useRef<HTMLAudioElement | null>(null);
   const resultScoreRef = useRef<HTMLAudioElement | null>(null);
 
-  // Helper to play sound respecting settings (fixed typing)
+  // Helper to play sound respecting settings
   const playSound = (audioRef: { current: HTMLAudioElement | null }) => {
     if (!soundsEnabled) return;
     const audio = audioRef.current;
@@ -161,13 +193,27 @@ export default function StudentGame() {
       setLeaderboard([]);
       setLeaderboardLoading(false);
 
-      if (typeof navigator !== "undefined" && !navigator.onLine) {
-        setQuestions([]);
-        setLoadError("You are offline. Connect to the internet to load questions.");
-        setLoadingQuestions(false);
+      const isOffline =
+        typeof navigator !== "undefined" ? !navigator.onLine : false;
+
+      // 🔁 Try cache first when offline
+      if (isOffline) {
+        const cached = loadQuestionsFromCache(difficulty);
+        if (cached && cached.length > 0) {
+          setQuestions(shuffleQuestions(cached));
+          setLoadingQuestions(false);
+          setLoadError("");
+        } else {
+          setQuestions([]);
+          setLoadError(
+            "You are offline and there are no saved questions yet. Open AZMATH while online at least once to sync questions."
+          );
+          setLoadingQuestions(false);
+        }
         return;
       }
 
+      // Online: get fresh questions from Firestore, then cache them
       try {
         const colRef = collection(db, collectionName(difficulty));
         const q = query(colRef, orderBy("createdAt", "asc"));
@@ -178,8 +224,13 @@ export default function StudentGame() {
 
           let imgArray: string[] = [];
           if (Array.isArray(data.imageUrls)) {
-            imgArray = data.imageUrls.filter((x: unknown) => typeof x === "string");
-          } else if (typeof data.imageUrl === "string" && data.imageUrl.trim()) {
+            imgArray = data.imageUrls.filter(
+              (x: unknown) => typeof x === "string"
+            );
+          } else if (
+            typeof data.imageUrl === "string" &&
+            data.imageUrl.trim()
+          ) {
             imgArray = [data.imageUrl];
           }
 
@@ -192,12 +243,40 @@ export default function StudentGame() {
           };
         });
 
-        // 🔀 randomize order each time we load
+        // Save full ordered list to local cache (not shuffled)
+        saveQuestionsToCache(difficulty, list);
+
+        // 🔁 Prefetch all images so they’re cached by the service worker
+        if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+          const allImageUrls: string[] = [];
+          list.forEach((q) => {
+            (q.imageUrls || []).forEach((u) => {
+              if (typeof u === "string" && u.trim()) allImageUrls.push(u);
+            });
+          });
+          const unique = Array.from(new Set(allImageUrls));
+          unique.forEach((url) => {
+            // fire-and-forget; SW will see these and cache them
+            fetch(url).catch(() => {});
+          });
+        }
+
+        // randomize order for gameplay
         const shuffled = shuffleQuestions(list);
         setQuestions(shuffled);
       } catch (err) {
         console.error(err);
-        setLoadError("Failed to load questions. Please try again.");
+        // Try fallback to cache if network failed
+        const cached = loadQuestionsFromCache(difficulty);
+        if (cached && cached.length > 0) {
+          setQuestions(shuffleQuestions(cached));
+          setLoadError(
+            "Failed to load latest questions, but we loaded your saved set instead."
+          );
+        } else {
+          setQuestions([]);
+          setLoadError("Failed to load questions. Please try again.");
+        }
       } finally {
         setLoadingQuestions(false);
       }
@@ -208,7 +287,13 @@ export default function StudentGame() {
 
   // Timer: 60s per question
   useEffect(() => {
-    if (!difficulty || finished || questions.length === 0 || index >= questions.length) return;
+    if (
+      !difficulty ||
+      finished ||
+      questions.length === 0 ||
+      index >= questions.length
+    )
+      return;
 
     setTimeLeft(60);
 
@@ -314,10 +399,11 @@ export default function StudentGame() {
       setLeaderboardLoading(true);
       try {
         const colRef = collection(db, `leaderboard_${difficulty}`);
-        // 👉 single orderBy only, so no composite index needed
         const q = query(colRef, orderBy("score", "desc"), limit(5));
         const snap = await getDocs(q);
-        const list: LeaderboardEntry[] = snap.docs.map((d) => d.data() as LeaderboardEntry);
+        const list: LeaderboardEntry[] = snap.docs.map(
+          (d) => d.data() as LeaderboardEntry
+        );
         setLeaderboard(list);
       } catch (err) {
         console.error("Failed to load leaderboard:", err);
@@ -344,7 +430,10 @@ export default function StudentGame() {
           position: "relative",
         }}
       >
-        <SoundToggleButton enabled={soundsEnabled} onToggle={() => setSoundsEnabled((prev) => !prev)} />
+        <SoundToggleButton
+          enabled={soundsEnabled}
+          onToggle={() => setSoundsEnabled((prev) => !prev)}
+        />
 
         <div
           style={{
@@ -428,8 +517,10 @@ export default function StudentGame() {
                       opacity: 0.9,
                     }}
                   >
-                    {d === "easy" && "Warm up your brain with simple questions."}
-                    {d === "average" && "A balanced mix of fun and challenge."}
+                    {d === "easy" &&
+                      "Warm up your brain with simple questions."}
+                    {d === "average" &&
+                      "A balanced mix of fun and challenge."}
                     {d === "hard" && "Test your limits with tough questions!"}
                   </div>
                 </div>
@@ -466,7 +557,10 @@ export default function StudentGame() {
           position: "relative",
         }}
       >
-        <SoundToggleButton enabled={soundsEnabled} onToggle={() => setSoundsEnabled((prev) => !prev)} />
+        <SoundToggleButton
+          enabled={soundsEnabled}
+          onToggle={() => setSoundsEnabled((prev) => !prev)}
+        />
 
         <motion.div
           initial={{ scale: 0.8, opacity: 0 }}
@@ -535,7 +629,10 @@ export default function StudentGame() {
           position: "relative",
         }}
       >
-        <SoundToggleButton enabled={soundsEnabled} onToggle={() => setSoundsEnabled((prev) => !prev)} />
+        <SoundToggleButton
+          enabled={soundsEnabled}
+          onToggle={() => setSoundsEnabled((prev) => !prev)}
+        />
 
         <h2
           style={{
@@ -594,8 +691,8 @@ export default function StudentGame() {
               color: "#fecaca",
             }}
           >
-            Tip: open AZMATH while online at least once so questions can sync and be available next
-            time.
+            Tip: open AZMATH while online at least once so questions can sync
+            and be available next time.
           </p>
         )}
       </main>
@@ -619,7 +716,10 @@ export default function StudentGame() {
           position: "relative",
         }}
       >
-        <SoundToggleButton enabled={soundsEnabled} onToggle={() => setSoundsEnabled((prev) => !prev)} />
+        <SoundToggleButton
+          enabled={soundsEnabled}
+          onToggle={() => setSoundsEnabled((prev) => !prev)}
+        />
 
         <motion.h1
           initial={{ scale: 0.6, opacity: 0 }}
@@ -706,7 +806,6 @@ export default function StudentGame() {
           >
             Play Again
           </motion.button>
-
         </div>
 
         {/* Leaderboard */}
@@ -777,33 +876,33 @@ export default function StudentGame() {
               ))}
             </ol>
           )}
-                  {/* Back to home (small button under leaderboard) */}
-        <div
-          style={{
-            marginTop: "18px",
-            width: "100%",
-            maxWidth: "480px",
-            display: "flex",
-            justifyContent: "flex-end",
-          }}
-        >
-          <button
-            onClick={() => router.push("/")}
+
+          {/* Back to home (small button under leaderboard) */}
+          <div
             style={{
-              padding: "6px 14px",
-              borderRadius: "999px",
-              border: "1px solid rgba(148,163,184,0.6)",
-              background: "rgba(15,23,42,0.9)",
-              color: "#e5e7eb",
-              fontSize: "11px",
-              cursor: "pointer",
-              opacity: 0.9,
+              marginTop: "18px",
+              width: "100%",
+              maxWidth: "480px",
+              display: "flex",
+              justifyContent: "flex-end",
             }}
           >
-            Back to Home
-          </button>
-        </div>
-
+            <button
+              onClick={() => router.push("/")}
+              style={{
+                padding: "6px 14px",
+                borderRadius: "999px",
+                border: "1px solid rgba(148,163,184,0.6)",
+                background: "rgba(15,23,42,0.9)",
+                color: "#e5e7eb",
+                fontSize: "11px",
+                cursor: "pointer",
+                opacity: 0.9,
+              }}
+            >
+              Back to Home
+            </button>
+          </div>
         </div>
       </main>
     );
@@ -827,7 +926,10 @@ export default function StudentGame() {
         position: "relative",
       }}
     >
-      <SoundToggleButton enabled={soundsEnabled} onToggle={() => setSoundsEnabled((prev) => !prev)} />
+      <SoundToggleButton
+        enabled={soundsEnabled}
+        onToggle={() => setSoundsEnabled((prev) => !prev)}
+      />
 
       <div
         style={{
@@ -1026,19 +1128,25 @@ export default function StudentGame() {
         >
           {currentQuestion.answers.map((answer, i) => {
             const color =
-              i === 0 ? "#00ffa3" : i === 1 ? "#9ca3af" : i === 2 ? "#ff6ad5" : "#ff9f40";
-            return <AnswerBox key={i} color={color} label={answer} onClick={() => handleAnswer(i)} />;
+              i === 0
+                ? "#00ffa3"
+                : i === 1
+                ? "#9ca3af"
+                : i === 2
+                ? "#ff6ad5"
+                : "#ff9f40";
+            return (
+              <AnswerBox
+                key={i}
+                color={color}
+                label={answer}
+                onClick={() => handleAnswer(i)}
+              />
+            );
           })}
         </div>
 
-        {/* Change difficulty button */}
-        <div
-          style={{
-            marginTop: "24px",
-            textAlign: "center",
-          }}
-        >
-        </div>
+        {/* (You can add a "Change difficulty" button here later if you like) */}
       </div>
     </main>
   );

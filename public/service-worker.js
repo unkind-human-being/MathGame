@@ -1,18 +1,17 @@
 // public/service-worker.js
 
-const CACHE_NAME = "asmath-pwa-cache-v2"; // bump version
+const CACHE_NAME = "asmath-pwa-cache-v3";
 const OFFLINE_URL = "/offline";
 
-// Cache the app shell (UI pages + key assets)
 const PRECACHE_URLS = [
-  "/",                 // Home page
-  "/student",          // Student game shell
-  "/teacher",          // Teacher page shell
-  "/auth/login",       // Login shell (if exists)
-  OFFLINE_URL,         // Offline fallback page
-  "/manifest.json",    // PWA manifest
+  "/",
+  "/student",
+  "/teacher",
+  "/auth/login",
+  OFFLINE_URL,
+  "/manifest.json",
   "/favicon.ico",
-  "/icons/icon-512x512.png" // match your actual file path
+  "/icons/icon-512x512.png",
 ];
 
 self.addEventListener("install", (event) => {
@@ -49,8 +48,15 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          try {
+            const copy = response.clone();
+            caches
+              .open(CACHE_NAME)
+              .then((cache) => cache.put(request, copy))
+              .catch(() => {});
+          } catch (err) {
+            console.warn("[SW] clone error (navigate):", err);
+          }
           return response;
         })
         .catch(async () => {
@@ -62,7 +68,55 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // 2) Same-origin static assets → cache first, then update in background
+  // 2) IMAGES (any origin) → cache first, then network
+  if (request.destination === "image") {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        if (cached) {
+          // refresh in background
+          fetch(request)
+            .then((networkResponse) => {
+              try {
+                if (networkResponse && networkResponse.status === 200) {
+                  const copy = networkResponse.clone();
+                  caches
+                    .open(CACHE_NAME)
+                    .then((cache) => cache.put(request, copy))
+                    .catch(() => {});
+                }
+              } catch (err) {
+                console.warn("[SW] clone error (image refresh):", err);
+              }
+            })
+            .catch(() => {});
+          return cached;
+        }
+
+        // Not cached yet: fetch and store
+        return fetch(request)
+          .then((networkResponse) => {
+            try {
+              if (networkResponse && networkResponse.status === 200) {
+                const copy = networkResponse.clone();
+                caches
+                  .open(CACHE_NAME)
+                  .then((cache) => cache.put(request, copy))
+                  .catch(() => {});
+              }
+            } catch (err) {
+              console.warn("[SW] clone error (image fetch):", err);
+            }
+            return networkResponse;
+          })
+          .catch(() => {
+            return new Response("", { status: 503, statusText: "Offline" });
+          });
+      })
+    );
+    return;
+  }
+
+  // 3) Same-origin static assets (JS, CSS, etc.) → cache first, then update
   if (url.origin === self.location.origin) {
     event.respondWith(
       caches.match(request).then((cachedResponse) => {
@@ -70,10 +124,16 @@ self.addEventListener("fetch", (event) => {
           // refresh in background
           fetch(request)
             .then((networkResponse) => {
-              if (networkResponse && networkResponse.status === 200) {
-                caches.open(CACHE_NAME).then((cache) =>
-                  cache.put(request, networkResponse.clone())
-                );
+              try {
+                if (networkResponse && networkResponse.status === 200) {
+                  const copy = networkResponse.clone();
+                  caches
+                    .open(CACHE_NAME)
+                    .then((cache) => cache.put(request, copy))
+                    .catch(() => {});
+                }
+              } catch (err) {
+                console.warn("[SW] clone error (static refresh):", err);
               }
             })
             .catch(() => {});
@@ -83,11 +143,16 @@ self.addEventListener("fetch", (event) => {
         // not cached yet → try network, then cache it
         return fetch(request)
           .then((networkResponse) => {
-            if (networkResponse && networkResponse.status === 200) {
-              const copy = networkResponse.clone();
-              caches.open(CACHE_NAME).then((cache) =>
-                cache.put(request, copy)
-              );
+            try {
+              if (networkResponse && networkResponse.status === 200) {
+                const copy = networkResponse.clone();
+                caches
+                  .open(CACHE_NAME)
+                  .then((cache) => cache.put(request, copy))
+                  .catch(() => {});
+              }
+            } catch (err) {
+              console.warn("[SW] clone error (static fetch):", err);
             }
             return networkResponse;
           })
@@ -97,7 +162,7 @@ self.addEventListener("fetch", (event) => {
 
             return new Response("Offline and resource not cached.", {
               status: 503,
-              statusText: "Service Unavailable"
+              statusText: "Service Unavailable",
             });
           });
       })
