@@ -506,7 +506,7 @@ export default function CreateRoom() {
                 marginBottom: 6,
               }}
             >
-              Click a shape to upload it to Cloudinary and set it as the
+              choose a shape and set it as the
               question image.
             </p>
 
