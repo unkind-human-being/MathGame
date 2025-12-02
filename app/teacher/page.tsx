@@ -67,7 +67,7 @@ export default function TeacherPage() {
           textShadow: "0 0 25px #14b8ff",
         }}
       >
-        TEACHER MODE
+        LECTURE MODE
       </motion.h1>
 
       <div style={wrap}>

@@ -39,7 +39,7 @@ export default function RootLayout({
           name="apple-mobile-web-app-status-bar-style"
           content="black-translucent"
         />
-        <meta name="apple-mobile-web-app-title" content="ASMATH" />
+        <meta name="apple-mobile-web-app-title" content="AZMATH" />
 
         {/* Explicit manifest link (helps some browsers) */}
         <link rel="manifest" href="/manifest.json" />
