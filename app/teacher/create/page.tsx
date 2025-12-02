@@ -7,12 +7,18 @@ import { db, auth } from "@/firebase/firebaseConfig";
 import { doc, setDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 
-// CLOUDINARY CONFIG (same as your other project)
+// CLOUDINARY CONFIG
 const CLOUD_NAME = "dmoara1ht";
 const UPLOAD_PRESET = "azmath";
 
-// ✅ Reuse the same helper that works in your other project
-async function uploadToCloudinary(file: File) {
+// 👉 Helper to force WebP + auto quality
+function toWebP(url: string): string {
+  if (!url.includes("/upload/")) return url;
+  return url.replace("/upload/", "/upload/f_webp,q_auto/");
+}
+
+// ✅ Return URL as string (already WebP-optimized)
+async function uploadToCloudinary(file: File): Promise<string> {
   const form = new FormData();
   form.append("file", file);
   form.append("upload_preset", UPLOAD_PRESET);
@@ -25,14 +31,77 @@ async function uploadToCloudinary(file: File) {
     }
   );
 
+  const data = await res.json();
+
   if (!res.ok) {
-    const text = await res.text();
-    console.error("Cloudinary upload error:", text);
-    throw new Error(text || "Cloudinary upload failed");
+    console.error("Cloudinary upload error:", data);
+    throw new Error(
+      (typeof data === "string" ? data : data?.error?.message) ||
+        "Cloudinary upload failed"
+    );
   }
 
-  return res.json() as Promise<{ secure_url: string }>;
+  const secureUrl = data.secure_url as string;
+  return toWebP(secureUrl);
 }
+
+/* ========== SHAPES LIBRARY (same as other pages) ========== */
+
+interface ShapeOption {
+  id: string;
+  name: string;
+  file: string;
+}
+
+const RAW_SHAPES: ShapeOption[] = [
+  { id: "circle", name: "Circle", file: "circle.jpg" },
+  { id: "decagon", name: "Decagon", file: "decagon.jpg" },
+  {
+    id: "equilateral-triangle",
+    name: "Equilateral Triangle",
+    file: "equilateral triangle.jpg",
+  },
+  { id: "heptagon", name: "Heptagon", file: "heptagon.jpg" },
+  { id: "hexagon", name: "Hexagon", file: "hexagon.jpg" },
+  { id: "kite", name: "Kite", file: "kite.jpg" },
+  { id: "nonagon", name: "Nonagon", file: "nonagon.jpg" },
+  {
+    id: "obtuse-triangle",
+    name: "Obtuse Triangle",
+    file: "obtuse triangle.jpg",
+  },
+  { id: "octagon", name: "Octagon", file: "octagon.jpg" },
+  { id: "oval", name: "Oval", file: "oval.jpg" },
+  { id: "pentagon", name: "Pentagon", file: "pentagon.jpg" },
+  { id: "rectangle", name: "Rectangle", file: "rectangle.jpg" },
+  { id: "rhombus", name: "Rhombus", file: "rhombus.jpg" },
+  {
+    id: "right-angled-triangle",
+    name: "Right Angled Triangle",
+    file: "right angled triangle.jpg",
+  },
+  {
+    id: "scale-triangle",
+    name: "Scalene Triangle",
+    file: "scale triangle.jpg",
+  },
+  {
+    id: "semicircle",
+    name: "Semicircle",
+    file: "semicircle.jpg",
+  },
+  { id: "square", name: "Square", file: "square.jpg" },
+];
+
+const SHAPES: ShapeOption[] = [...RAW_SHAPES].sort((a, b) =>
+  a.name.localeCompare(b.name)
+);
+
+function shapeSrc(file: string): string {
+  return `/shapes/${encodeURIComponent(file)}`;
+}
+
+/* ========================================================= */
 
 const MATH_SYMBOLS = [
   "+",
@@ -88,6 +157,8 @@ type ActiveField = {
   field: keyof QA;
 };
 
+type QuestionType = "exam" | "activity";
+
 export default function CreateRoom() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
@@ -121,7 +192,7 @@ export default function CreateRoom() {
     { ...emptyQA },
   ]);
 
-  const [activeTab, setActiveTab] = useState<"exam" | "activity">("exam");
+  const [activeTab, setActiveTab] = useState<QuestionType>("exam");
 
   /* ------------------ SLIDES ------------------ */
   const [slides, setSlides] = useState<string[]>([]);
@@ -129,7 +200,7 @@ export default function CreateRoom() {
 
   /* ------------------ QUESTION IMAGE UPLOAD ------------------ */
   const [uploadingQuestion, setUploadingQuestion] = useState<{
-    type: "exam" | "activity";
+    type: QuestionType;
     index: number;
   } | null>(null);
 
@@ -139,6 +210,18 @@ export default function CreateRoom() {
   const [activeField, setActiveField] = useState<ActiveField | null>(null);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
 
+  /* ------------------ SHAPES PICKER ------------------ */
+  const [showShapesPicker, setShowShapesPicker] = useState(false);
+  const [shapeSearch, setShapeSearch] = useState("");
+  const [shapeTarget, setShapeTarget] = useState<{
+    type: QuestionType;
+    index: number;
+  } | null>(null);
+
+  const filteredShapes = SHAPES.filter((shape) =>
+    shape.name.toLowerCase().includes(shapeSearch.toLowerCase())
+  );
+
   // ---------- Upload slides ----------
   async function uploadSlide(e: any) {
     const file: File | undefined = e.target.files?.[0];
@@ -146,12 +229,12 @@ export default function CreateRoom() {
 
     setUploadingSlides(true);
     try {
-      const result = await uploadToCloudinary(file);
-      if (!result.secure_url) {
+      const url = await uploadToCloudinary(file);
+      if (!url) {
         alert("Slide upload failed. Please check Cloudinary config.");
         return;
       }
-      setSlides((prev) => [...prev, String(result.secure_url)]);
+      setSlides((prev) => [...prev, url]);
     } catch (err) {
       console.error("Slide upload failed:", err);
       alert("Slide upload failed. Please check Cloudinary config / console.");
@@ -160,9 +243,9 @@ export default function CreateRoom() {
     }
   }
 
-  // ---------- Upload question image ----------
+  // ---------- Upload question image (normal file) ----------
   async function uploadQuestionImage(
-    type: "exam" | "activity",
+    type: QuestionType,
     index: number,
     e: any
   ) {
@@ -172,13 +255,11 @@ export default function CreateRoom() {
     setUploadingQuestion({ type, index });
 
     try {
-      const result = await uploadToCloudinary(file);
-      if (!result.secure_url) {
+      const url = await uploadToCloudinary(file);
+      if (!url) {
         alert("Question image upload failed. Please check Cloudinary config.");
         return;
       }
-
-      const url = String(result.secure_url);
 
       if (type === "exam") {
         setExamQuestions((prev) => {
@@ -200,6 +281,53 @@ export default function CreateRoom() {
       );
     } finally {
       setUploadingQuestion(null);
+    }
+  }
+
+  // ---------- Pick shape as question image ----------
+  async function handlePickShape(shape: ShapeOption) {
+    if (!shapeTarget) return;
+
+    const { type, index } = shapeTarget;
+    setUploadingQuestion({ type, index });
+
+    try {
+      const src = shapeSrc(shape.file);
+      const res = await fetch(src);
+      if (!res.ok) {
+        console.error("Failed to fetch shape image:", src);
+        alert("Unable to load this shape image. Check console.");
+        return;
+      }
+
+      const blob = await res.blob();
+      const file = new File([blob], shape.file, {
+        type: blob.type || "image/jpeg",
+      });
+
+      const url = await uploadToCloudinary(file);
+
+      if (type === "exam") {
+        setExamQuestions((prev) => {
+          const copy = [...prev];
+          copy[index] = { ...copy[index], imageUrl: url };
+          return copy;
+        });
+      } else {
+        setActivityQuestions((prev) => {
+          const copy = [...prev];
+          copy[index] = { ...copy[index], imageUrl: url };
+          return copy;
+        });
+      }
+    } catch (err) {
+      console.error("Shape pick upload failed:", err);
+      alert("Shape image upload failed. Check console for details.");
+    } finally {
+      setUploadingQuestion(null);
+      setShowShapesPicker(false);
+      setShapeTarget(null);
+      setShapeSearch("");
     }
   }
 
@@ -337,6 +465,98 @@ export default function CreateRoom() {
   /* ======================= UI ======================= */
   return (
     <main style={page}>
+      {/* SHAPES PICKER MODAL */}
+      {showShapesPicker && shapeTarget && (
+        <div
+          onClick={() => {
+            setShowShapesPicker(false);
+            setShapeTarget(null);
+          }}
+          style={shapesOverlay}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={shapesModal}
+          >
+            <div style={shapesHeader}>
+              <div>
+                <div style={shapesLabel}>Shape Library</div>
+                <div style={shapesTitle}>
+                  Attach Basic Shape Image →{" "}
+                  {shapeTarget.type === "exam" ? "Exam" : "Activity"} #
+                  {shapeTarget.index + 1}
+                </div>
+              </div>
+              <button
+                type="button"
+                style={keyboardCloseBtn}
+                onClick={() => {
+                  setShowShapesPicker(false);
+                  setShapeTarget(null);
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p
+              style={{
+                fontSize: 11,
+                color: "#9ca3af",
+                marginBottom: 6,
+              }}
+            >
+              Click a shape to upload it to Cloudinary and set it as the
+              question image.
+            </p>
+
+            <div style={{ marginBottom: 8 }}>
+              <input
+                type="text"
+                placeholder="Search shape (e.g. triangle, square, oval)…"
+                value={shapeSearch}
+                onChange={(e) => setShapeSearch(e.target.value)}
+                style={shapesSearch}
+              />
+            </div>
+
+            <div style={shapesGridWrap}>
+              {filteredShapes.length === 0 ? (
+                <p
+                  style={{
+                    fontSize: 12,
+                    color: "#6b7280",
+                    marginTop: 8,
+                  }}
+                >
+                  No shapes found. Try another keyword.
+                </p>
+              ) : (
+                <div style={shapesGrid}>
+                  {filteredShapes.map((shape) => (
+                    <button
+                      key={shape.id}
+                      type="button"
+                      style={shapeCard}
+                      onClick={() => handlePickShape(shape)}
+                    >
+                      <div style={shapeThumbWrap}>
+                        <img
+                          src={shapeSrc(shape.file)}
+                          alt={shape.name}
+                          style={shapeThumb}
+                        />
+                      </div>
+                      <span style={shapeName}>{shape.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <motion.div
         initial={{ opacity: 0, y: -6 }}
         animate={{ opacity: 1, y: 0 }}
@@ -443,15 +663,27 @@ export default function CreateRoom() {
                   <div style={{ ...imgThumb, opacity: 0.3 }}>No image</div>
                 )}
 
-                <label style={imgUploadBtn}>
-                  {q.imageUrl ? "Change Question Image" : "Upload Question Image"}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    style={{ display: "none" }}
-                    onChange={(e) => uploadQuestionImage("exam", i, e)}
-                  />
-                </label>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <label style={imgUploadBtn}>
+                    {q.imageUrl ? "Change Question Image" : "Upload Question Image"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      style={{ display: "none" }}
+                      onChange={(e) => uploadQuestionImage("exam", i, e)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    style={shapeBtn}
+                    onClick={() => {
+                      setShapeTarget({ type: "exam", index: i });
+                      setShowShapesPicker(true);
+                    }}
+                  >
+                    🔍 Shapes
+                  </button>
+                </div>
               </div>
               {uploadingQuestion &&
                 uploadingQuestion.type === "exam" &&
@@ -562,15 +794,27 @@ export default function CreateRoom() {
                   <div style={{ ...imgThumb, opacity: 0.3 }}>No image</div>
                 )}
 
-                <label style={imgUploadBtn}>
-                  {q.imageUrl ? "Change Question Image" : "Upload Question Image"}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    style={{ display: "none" }}
-                    onChange={(e) => uploadQuestionImage("activity", i, e)}
-                  />
-                </label>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <label style={imgUploadBtn}>
+                    {q.imageUrl ? "Change Question Image" : "Upload Question Image"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      style={{ display: "none" }}
+                      onChange={(e) => uploadQuestionImage("activity", i, e)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    style={shapeBtn}
+                    onClick={() => {
+                      setShapeTarget({ type: "activity", index: i });
+                      setShowShapesPicker(true);
+                    }}
+                  >
+                    🔍 Shapes
+                  </button>
+                </div>
               </div>
               {uploadingQuestion &&
                 uploadingQuestion.type === "activity" &&
@@ -890,6 +1134,17 @@ const imgUploadHint: CSSProperties = {
   marginBottom: 6,
 };
 
+const shapeBtn: CSSProperties = {
+  padding: "6px 12px",
+  borderRadius: 999,
+  border: "1px solid rgba(96,165,250,0.8)",
+  background: "rgba(15,23,42,0.95)",
+  color: "#dbeafe",
+  fontSize: 11,
+  cursor: "pointer",
+  textAlign: "center",
+};
+
 const fabButton: CSSProperties = {
   position: "fixed",
   right: 16,
@@ -961,4 +1216,107 @@ const keyButton: CSSProperties = {
   color: "#e5e7eb",
   fontSize: 14,
   cursor: "pointer",
+};
+
+/* ===== SHAPES MODAL STYLES ===== */
+
+const shapesOverlay: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(15,23,42,0.88)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  zIndex: 60,
+};
+
+const shapesModal: CSSProperties = {
+  width: "100%",
+  maxWidth: 520,
+  maxHeight: "75vh",
+  background: "rgba(15,23,42,0.98)",
+  borderRadius: 18,
+  border: "1px solid rgba(55,65,81,0.9)",
+  boxShadow: "0 25px 60px rgba(0,0,0,0.9)",
+  padding: "14px 16px 16px",
+  display: "flex",
+  flexDirection: "column",
+  gap: 10,
+};
+
+const shapesHeader: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginBottom: 4,
+};
+
+const shapesLabel: CSSProperties = {
+  fontSize: 11,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+  color: "#9ca3af",
+};
+
+const shapesTitle: CSSProperties = {
+  fontSize: 14,
+  fontWeight: 600,
+  marginTop: 2,
+};
+
+const shapesSearch: CSSProperties = {
+  width: "100%",
+  padding: "7px 9px",
+  borderRadius: 999,
+  border: "1px solid rgba(55,65,81,0.9)",
+  backgroundColor: "rgba(15,23,42,0.98)",
+  color: "#e5e7eb",
+  fontSize: 12,
+};
+
+const shapesGridWrap: CSSProperties = {
+  flex: 1,
+  overflowY: "auto",
+  paddingRight: 2,
+};
+
+const shapesGrid: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))",
+  gap: 8,
+};
+
+const shapeCard: CSSProperties = {
+  borderRadius: 10,
+  border: "1px solid rgba(55,65,81,0.9)",
+  background: "rgba(17,24,39,0.98)",
+  padding: "6px 6px 7px",
+  display: "flex",
+  flexDirection: "column",
+  gap: 4,
+  cursor: "pointer",
+  textAlign: "left",
+};
+
+const shapeThumbWrap: CSSProperties = {
+  width: "100%",
+  paddingBottom: "70%",
+  borderRadius: 8,
+  overflow: "hidden",
+  background: "#020617",
+  border: "1px solid rgba(31,41,55,0.9)",
+};
+
+const shapeThumb: CSSProperties = {
+  width: "100%",
+  height: "100%",
+  objectFit: "contain",
+  display: "block",
+};
+
+const shapeName: CSSProperties = {
+  fontSize: 12,
+  color: "#e5e7eb",
+  fontWeight: 500,
+  marginTop: 1,
 };
