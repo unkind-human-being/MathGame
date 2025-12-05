@@ -474,10 +474,7 @@ export default function CreateRoom() {
           }}
           style={shapesOverlay}
         >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={shapesModal}
-          >
+          <div onClick={(e) => e.stopPropagation()} style={shapesModal}>
             <div style={shapesHeader}>
               <div>
                 <div style={shapesLabel}>Shape Library</div>
@@ -506,8 +503,7 @@ export default function CreateRoom() {
                 marginBottom: 6,
               }}
             >
-              choose a shape and set it as the
-              question image.
+              choose a shape and set it as the question image.
             </p>
 
             <div style={{ marginBottom: 8 }}>
@@ -599,7 +595,18 @@ export default function CreateRoom() {
           )}
           <div style={slidesWrap}>
             {slides.map((s, i) => (
-              <img key={i} src={s} style={slideThumb} />
+              <div key={i} style={slideItem}>
+                <img src={s} style={slideThumb} />
+                <button
+                  type="button"
+                  style={slideDeleteBtn}
+                  onClick={() =>
+                    setSlides((prev) => prev.filter((_, idx) => idx !== i))
+                  }
+                >
+                  ✕
+                </button>
+              </div>
             ))}
           </div>
         </section>
@@ -663,9 +670,13 @@ export default function CreateRoom() {
                   <div style={{ ...imgThumb, opacity: 0.3 }}>No image</div>
                 )}
 
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 6 }}
+                >
                   <label style={imgUploadBtn}>
-                    {q.imageUrl ? "Change Question Image" : "Upload Question Image"}
+                    {q.imageUrl
+                      ? "Change Question Image"
+                      : "Upload Question Image"}
                     <input
                       type="file"
                       accept="image/*"
@@ -794,9 +805,13 @@ export default function CreateRoom() {
                   <div style={{ ...imgThumb, opacity: 0.3 }}>No image</div>
                 )}
 
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 6 }}
+                >
                   <label style={imgUploadBtn}>
-                    {q.imageUrl ? "Change Question Image" : "Upload Question Image"}
+                    {q.imageUrl
+                      ? "Change Question Image"
+                      : "Upload Question Image"}
                     <input
                       type="file"
                       accept="image/*"
@@ -1026,14 +1041,38 @@ const slidesWrap: CSSProperties = {
   display: "flex",
   gap: 10,
   overflowX: "auto",
+  paddingTop: 8,
+};
+
+const slideItem: CSSProperties = {
+  position: "relative",
+  width: 90,
+  height: 90,
+  flexShrink: 0,
 };
 
 const slideThumb: CSSProperties = {
-  width: 90,
-  height: 90,
+  width: "100%",
+  height: "100%",
   borderRadius: 8,
   objectFit: "cover",
   border: "2px solid #00ffa3",
+};
+
+const slideDeleteBtn: CSSProperties = {
+  position: "absolute",
+  top: -6,
+  right: -6,
+  width: 20,
+  height: 20,
+  borderRadius: "999px",
+  border: "none",
+  background: "#ff3d6c",
+  color: "white",
+  fontSize: 12,
+  fontWeight: "bold",
+  cursor: "pointer",
+  boxShadow: "0 2px 6px rgba(0,0,0,0.6)",
 };
 
 const tabs: CSSProperties = {

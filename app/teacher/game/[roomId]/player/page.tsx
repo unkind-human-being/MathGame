@@ -1,4 +1,4 @@
-// app/teacher/game/player/page.tsx
+// app/teacher/game/[roomId]/player/page.tsx
 "use client";
 
 import { useEffect, useState, CSSProperties, useRef } from "react";
@@ -10,6 +10,7 @@ import {
   updateDoc,
   collection,
   getDocs,
+  getDoc,
 } from "firebase/firestore";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 
@@ -80,6 +81,41 @@ function toWebpUrl(url: string | undefined | null): string {
   return url.replace("/upload/", "/upload/f_webp,q_auto,w_800/");
 }
 
+/* ========= REVIEW HELPERS ========= */
+
+function resolveStudentAnswer(raw: any, question: any): string {
+  if (raw === undefined || raw === null) return "-";
+
+  // we save text answers, but keep this flexible
+  if (typeof raw === "string") return raw || "-";
+
+  if (typeof raw === "number" && Array.isArray(question?.answers)) {
+    const idx = raw;
+    if (idx >= 0 && idx < question.answers.length) {
+      return question.answers[idx] ?? "-";
+    }
+  }
+
+  return String(raw);
+}
+
+function getCorrectAnswer(question: any): string {
+  if (!question) return "-";
+  if (typeof question.correct === "string" && question.correct.trim() !== "") {
+    return question.correct;
+  }
+  if (
+    typeof question.correctIndex === "number" &&
+    Array.isArray(question.answers)
+  ) {
+    const idx = question.correctIndex;
+    if (idx >= 0 && idx < question.answers.length) {
+      return question.answers[idx] ?? "-";
+    }
+  }
+  return "-";
+}
+
 /* ========= MAIN ========= */
 export default function PlayerScreen() {
   const params = useParams();
@@ -96,8 +132,21 @@ export default function PlayerScreen() {
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [viewImg, setViewImg] = useState<string | null>(null);
   const [index, setIndex] = useState(0);
-  const [roundScore, setRoundScore] = useState(0); // hidden from UI but used for saving
+  const [roundScore, setRoundScore] = useState(0); // per-round score
   const [mode, setMode] = useState<Mode>("waiting");
+
+  // store chosen answers locally so we can save + review later
+  const [activityAnswers, setActivityAnswers] = useState<string[]>([]);
+  const [examAnswers, setExamAnswers] = useState<string[]>([]);
+
+  /* ========= REVIEW STATE ========= */
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewActivityQuestions, setReviewActivityQuestions] = useState<QSet[]>(
+    []
+  );
+  const [reviewExamQuestions, setReviewExamQuestions] = useState<QSet[]>([]);
+  const [myResult, setMyResult] = useState<any | null>(null);
 
   /* ========= AUDIO ========= */
   const activityMusicRef = useRef<HTMLAudioElement | null>(null);
@@ -165,7 +214,10 @@ export default function PlayerScreen() {
 
   /* ========= FIRESTORE REAL-TIME ========= */
   useEffect(() => {
-    const unsub = onSnapshot(doc(db, "rooms", roomId), (snap) => {
+    if (!uid) return;
+
+    const roomRef = doc(db, "rooms", roomId);
+    const unsub = onSnapshot(roomRef, (snap) => {
       if (!snap.exists()) return;
       const data = snap.data();
       setRoomInfo(data);
@@ -184,11 +236,48 @@ export default function PlayerScreen() {
         setLeaderboard(data.leaderboard || []);
         setMode("results");
       }
-    });
-    return () => unsub();
-  }, [roomId]);
 
-  /* ========= LOAD QUESTIONS ========= */
+      // 🔍 Host opened Review Answers
+      if (data.reviewOpen) {
+        setReviewOpen(true);
+        setReviewLoading(true);
+
+        (async () => {
+          try {
+            const [activitySnap, examSnap, mySnap] = await Promise.all([
+              getDocs(collection(db, "rooms", roomId, "activity")),
+              getDocs(collection(db, "rooms", roomId, "exam")),
+              getDoc(doc(db, "rooms", roomId, "attendance", uid)),
+            ]);
+
+            const acts: any[] = [];
+            activitySnap.forEach((d) => acts.push(d.data() as QSet));
+            acts.sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
+
+            const exs: any[] = [];
+            examSnap.forEach((d) => exs.push(d.data() as QSet));
+            exs.sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
+
+            setReviewActivityQuestions(acts);
+            setReviewExamQuestions(exs);
+
+            if (mySnap.exists()) setMyResult(mySnap.data());
+            else setMyResult(null);
+          } catch (err) {
+            console.error("Player review load error:", err);
+          } finally {
+            setReviewLoading(false);
+          }
+        })();
+      } else {
+        setReviewOpen(false);
+      }
+    });
+
+    return () => unsub();
+  }, [roomId, uid]);
+
+  /* ========= LOAD QUESTIONS (for gameplay) ========= */
   useEffect(() => {
     if (!uid) return; // wait until uid is available
 
@@ -209,6 +298,8 @@ export default function PlayerScreen() {
 
   /* ========= ANSWER ========= */
   async function select(ans: string) {
+    if (!uid) return;
+
     playClick();
 
     const list = mode === "activity" ? activityQ : examQ;
@@ -216,27 +307,54 @@ export default function PlayerScreen() {
     if (!current) return;
 
     const ok = ans === current.correct; // still valid even after shuffling answers
-    const next = index + 1 === list.length;
-    const score = roundScore + (ok ? 1 : 0);
 
-    if (next) {
-      if (mode === "activity") {
+    const isActivity = mode === "activity";
+    const isExam = mode === "exam";
+
+    // prepare updated answers array
+    let newActivityAnswers = activityAnswers;
+    let newExamAnswers = examAnswers;
+
+    if (isActivity) {
+      newActivityAnswers = [...activityAnswers];
+      newActivityAnswers[index] = ans;
+    } else if (isExam) {
+      newExamAnswers = [...examAnswers];
+      newExamAnswers[index] = ans;
+    }
+
+    const newScore = roundScore + (ok ? 1 : 0);
+    const isLast = index + 1 === list.length;
+
+    if (isActivity) {
+      if (isLast) {
+        setActivityAnswers(newActivityAnswers);
         await updateDoc(doc(db, "rooms", roomId, "attendance", uid), {
-          activityScore: score,
+          activityScore: newScore,
+          activityAnswers: newActivityAnswers,
         });
         setMode("waitingExam");
         setIndex(0);
         setRoundScore(0);
       } else {
+        setActivityAnswers(newActivityAnswers);
+        setRoundScore(newScore);
+        setIndex((p) => p + 1);
+      }
+    } else if (isExam) {
+      if (isLast) {
+        setExamAnswers(newExamAnswers);
         await updateDoc(doc(db, "rooms", roomId, "attendance", uid), {
-          examScore: score,
+          examScore: newScore,
+          examAnswers: newExamAnswers,
         });
         setMode("done");
+      } else {
+        setExamAnswers(newExamAnswers);
+        setRoundScore(newScore);
+        setIndex((p) => p + 1);
       }
-      return;
     }
-    setRoundScore(score);
-    setIndex((p) => p + 1);
   }
 
   /* ========= SETTINGS MODAL ========= */
@@ -274,6 +392,16 @@ export default function PlayerScreen() {
       </button>
       <SettingsModal />
       {content}
+      {/* Personal review overlay, controlled by teacher */}
+      {reviewOpen && (
+        <ReviewOverlay
+          loading={reviewLoading}
+          activity={reviewActivityQuestions}
+          exam={reviewExamQuestions}
+          result={myResult}
+          onClose={() => setReviewOpen(false)} // <<< back to leaderboard
+        />
+      )}
     </main>
   );
 
@@ -449,12 +577,7 @@ export default function PlayerScreen() {
 
   // RESULTS / LEADERBOARD
   if (mode === "results") {
-    const sorted = [...leaderboard].sort(
-      (a, b) =>
-        (b.activityScore ?? 0) +
-        (b.examScore ?? 0) -
-        ((a.activityScore ?? 0) + (a.examScore ?? 0))
-    );
+    const sorted = [...sortedPlayers];
     return PageWrap(
       <div style={mainShell}>
         <motion.h1
@@ -515,7 +638,165 @@ export default function PlayerScreen() {
   return null;
 }
 
-/* ========= COMPONENTS ========= */
+/* ========= REVIEW OVERLAY COMPONENT ========= */
+
+function ReviewOverlay({
+  loading,
+  activity,
+  exam,
+  result,
+  onClose,
+}: {
+  loading: boolean;
+  activity: QSet[];
+  exam: QSet[];
+  result: any | null;
+  onClose: () => void; // 👈 back to leaderboard
+}) {
+  const activityScore = result?.activityScore ?? 0;
+  const examScore = result?.examScore ?? 0;
+  const totalScore = activityScore + examScore;
+
+  return (
+    <div style={reviewBg}>
+      <div style={reviewCard}>
+        <h2 style={reviewTitle}>🔍 Review Answers</h2>
+        <p style={reviewSub}>
+          These are <b>your</b> answers and the correct answers.
+        </p>
+
+        {loading && (
+          <p style={{ textAlign: "center", marginBottom: 10 }}>
+            Loading review...
+          </p>
+        )}
+
+        {!loading && (
+          <>
+            {/* SCORE SUMMARY */}
+            <div style={scoreCard}>
+              <div style={scoreItem}>
+                <span style={scoreLabel}>Activity</span>
+                <span style={scoreValue}>{activityScore}</span>
+              </div>
+              <div style={scoreDivider} />
+              <div style={scoreItem}>
+                <span style={scoreLabel}>Exam</span>
+                <span style={scoreValue}>{examScore}</span>
+              </div>
+              <div style={scoreDivider} />
+              <div style={scoreItem}>
+                <span style={scoreLabel}>Total</span>
+                <span style={{ ...scoreValue, color: "#22c55e" }}>
+                  {totalScore}
+                </span>
+              </div>
+            </div>
+
+            {/* ACTIVITY QUESTIONS */}
+            <h3 style={sectionTitleReview}>Activity Questions</h3>
+            {activity.length === 0 && (
+              <p style={emptyTextReview}>No activity questions.</p>
+            )}
+            {activity.map((q, i) => {
+              const rawAns = result?.activityAnswers?.[i];
+              const ans = resolveStudentAnswer(rawAns, q);
+              const corr = getCorrectAnswer(q);
+              const correct = ans !== "-" && corr !== "-" && ans === corr;
+
+              return (
+                <div key={i} style={questionBlockReview}>
+                  <div style={questionTextReview}>
+                    <b>A{i + 1}.</b> {q.question}
+                  </div>
+
+                  <div style={answerRowReview}>
+                    <span style={answerLabelReview}>Your answer</span>
+                    <span
+                      style={{
+                        ...answerValueReview,
+                        color: correct ? "#22c55e" : "#ef4444",
+                      }}
+                    >
+                      {ans}
+                    </span>
+                  </div>
+                  <div style={answerRowReview}>
+                    <span style={answerLabelReview}>Correct answer</span>
+                    <span
+                      style={{
+                        ...answerValueReview,
+                        color: "#22c55e",
+                      }}
+                    >
+                      {corr}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* EXAM QUESTIONS */}
+            <h3 style={sectionTitleReview}>Exam Questions</h3>
+            {exam.length === 0 && (
+              <p style={emptyTextReview}>No exam questions.</p>
+            )}
+            {exam.map((q, i) => {
+              const rawAns = result?.examAnswers?.[i];
+              const ans = resolveStudentAnswer(rawAns, q);
+              const corr = getCorrectAnswer(q);
+              const correct = ans !== "-" && corr !== "-" && ans === corr;
+
+              return (
+                <div key={i} style={questionBlockReview}>
+                  <div style={questionTextReview}>
+                    <b>E{i + 1}.</b> {q.question}
+                  </div>
+
+                  <div style={answerRowReview}>
+                    <span style={answerLabelReview}>Your answer</span>
+                    <span
+                      style={{
+                        ...answerValueReview,
+                        color: correct ? "#22c55e" : "#ef4444",
+                      }}
+                    >
+                      {ans}
+                    </span>
+                  </div>
+                  <div style={answerRowReview}>
+                    <span style={answerLabelReview}>Correct answer</span>
+                    <span
+                      style={{
+                        ...answerValueReview,
+                        color: "#22c55e",
+                      }}
+                    >
+                      {corr}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </>
+        )}
+
+        {/* BACK BUTTON */}
+        <div style={{ marginTop: 12, display: "flex", justifyContent: "center" }}>
+          <button style={chipButton} onClick={onClose}>
+            ⬅ Back to Leaderboard
+          </button>
+        </div>
+
+        <p style={{ fontSize: 11, opacity: 0.7, marginTop: 8 }}>
+          Your teacher controls when this review screen appears.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ========= OTHER COMPONENTS ========= */
 
 const Toggle = ({ enabled }: { enabled: boolean }) => (
   <div
@@ -810,4 +1091,121 @@ const chipButton: CSSProperties = {
   color: "#0a0f24",
   fontWeight: 700,
   cursor: "pointer",
+};
+
+/* ==== REVIEW STYLES ==== */
+
+const reviewBg: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(0,0,0,0.85)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  zIndex: 1000,
+};
+
+const reviewCard: CSSProperties = {
+  background: "#020617",
+  borderRadius: 18,
+  padding: 18,
+  width: "96%",
+  maxWidth: 720,
+  maxHeight: "92vh",
+  overflowY: "auto",
+  border: "1px solid rgba(148,163,184,0.5)",
+  boxShadow: "0 24px 60px rgba(0,0,0,0.8)",
+};
+
+const reviewTitle: CSSProperties = {
+  fontSize: 22,
+  fontWeight: 800,
+  marginBottom: 4,
+  textAlign: "center",
+  color: "#f9a8ff",
+};
+
+const reviewSub: CSSProperties = {
+  fontSize: 13,
+  textAlign: "center",
+  marginBottom: 12,
+  opacity: 0.8,
+};
+
+const scoreCard: CSSProperties = {
+  display: "flex",
+  alignItems: "stretch",
+  justifyContent: "space-between",
+  padding: "10px 12px",
+  borderRadius: 12,
+  background:
+    "linear-gradient(135deg, rgba(59,130,246,0.15), rgba(16,185,129,0.12))",
+  border: "1px solid rgba(96,165,250,0.35)",
+  marginBottom: 12,
+};
+
+const scoreItem: CSSProperties = {
+  flex: 1,
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  gap: 2,
+};
+
+const scoreLabel: CSSProperties = {
+  fontSize: 11,
+  textTransform: "uppercase",
+  letterSpacing: "0.12em",
+  opacity: 0.8,
+};
+
+const scoreValue: CSSProperties = {
+  fontSize: 22,
+  fontWeight: 800,
+};
+
+const scoreDivider: CSSProperties = {
+  width: 1,
+  background: "rgba(148,163,184,0.4)",
+  margin: "0 8px",
+};
+
+const sectionTitleReview: CSSProperties = {
+  fontSize: 16,
+  fontWeight: "bold",
+  marginTop: 10,
+  marginBottom: 4,
+  color: "#7dfff6",
+};
+
+const questionBlockReview: CSSProperties = {
+  marginBottom: 10,
+  paddingBottom: 8,
+  borderBottom: "1px solid #0f172a",
+};
+
+const questionTextReview: CSSProperties = {
+  fontSize: 14,
+  marginBottom: 4,
+};
+
+const answerRowReview: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  fontSize: 13,
+};
+
+const answerLabelReview: CSSProperties = {
+  opacity: 0.8,
+};
+
+const answerValueReview: CSSProperties = {
+  fontWeight: 600,
+};
+
+const emptyTextReview: CSSProperties = {
+  fontSize: 13,
+  opacity: 0.7,
+  marginBottom: 4,
 };
